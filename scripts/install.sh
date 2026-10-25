@@ -184,10 +184,13 @@ server {
 }
 EOF
 
-# Link ke sites Nginx
-mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+# Link ke sites Nginx & conf.d
+mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d
 ln -sf /www/panel/config/nginx-panel.conf /etc/nginx/sites-available/almusa-panel.conf
 ln -sf /etc/nginx/sites-available/almusa-panel.conf /etc/nginx/sites-enabled/almusa-panel.conf
+if [ -f /www/panel/config/cloudflare-realip.conf ]; then
+    ln -sf /www/panel/config/cloudflare-realip.conf /etc/nginx/conf.d/cloudflare-realip.conf
+fi
 
 # Daftarkan dedicated PHP-FPM service untuk panel
 cat << EOF > /etc/systemd/system/mypanel-web.service

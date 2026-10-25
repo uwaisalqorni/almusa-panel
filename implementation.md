@@ -8,8 +8,8 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
 
 | Fase | Fokus Utama | Estimasi Kompleksitas | Status |
 | :--- | :--- | :---: | :---: |
-| **Fase 1** | Hardening Fondasi & Keamanan Arsitektur | Tinggi (Kritis) | ⏳ Siap Dikerjakan |
-| **Fase 2** | Fitur Esensial Pengelolaan Hosting | Menengah | 📋 Terjadwal |
+| **Fase 1** | Hardening Fondasi & Keamanan Arsitektur | Tinggi (Kritis) | ✅ Selesai (Completed) |
+| **Fase 2** | Fitur Esensial Pengelolaan Hosting | Menengah | ⏳ Siap Dikerjakan |
 | **Fase 3** | Otomasi Backup, Cron & Disaster Recovery | Menengah | 📋 Terjadwal |
 | **Fase 4** | Monitoring, Health Watchdog & Notifikasi | Rendah-Menengah | 📋 Terjadwal |
 
@@ -51,11 +51,12 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Uji POST ke `/login` 5x berturut-turut dengan password salah; percobaan ke-5 langsung mengunci akses selama 15 menit dan mematikan tombol submit. Log tercatat rapi di `data/panel_security.log`.
 
 ### Langkah 1.4: Real IP Forwarding dari Cloudflare
-- [ ] **Tugas:**
-  - Tambahkan konfigurasi Nginx `set_real_ip_from` untuk daftar CIDR IP Cloudflare resmi (IPv4 & IPv6).
-  - Set `real_ip_header CF-Connecting-IP;` agar log akses dan pembatasan IP mendeteksi IP asli pengguna, bukan IP edge Cloudflare.
-- [ ] **Verifikasi:**
-  - Buka `/dashboard` melalui `https://panel.bidanokta.xyz`, periksa IP yang tercatat di session/audit log.
+- [x] **Tugas:**
+  - [x] Tambahkan konfigurasi Nginx `set_real_ip_from` untuk daftar CIDR IP Cloudflare resmi (IPv4 & IPv6) serta subnet proxy tunnel lokal di `config/cloudflare-realip.conf`.
+  - [x] Set `real_ip_header CF-Connecting-IP;` dan `real_ip_recursive on;` di `/etc/nginx/conf.d/cloudflare-realip.conf` agar berlaku global untuk panel dan semua website.
+  - [x] Perbarui `scripts/install.sh` agar otomatis menautkan konfigurasi real IP saat instalasi baru.
+- [x] **Verifikasi:**
+  - [x] Diuji dengan request online via Cloudflare; log Nginx (`/var/log/nginx/almusa_access.log`) mencatat alamat IP asli pengunjung secara presisi (IPv6 asli klien dan IPv4 terdeteksi akurat).
 
 ---
 
