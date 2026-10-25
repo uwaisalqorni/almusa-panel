@@ -51,11 +51,14 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     lsb-release \
     apt-transport-https
 
-# Add ondrej/php repo on Ubuntu for multi-version PHP support
-if [ "$OS" = "ubuntu" ]; then
-    echo -e "${BLUE}[*] Mendaftarkan PPA ondrej/php untuk dukungan multi-versi PHP...${NC}"
+# Add ondrej/php repo on Ubuntu for multi-version PHP support (only on focal, jammy, noble)
+CODENAME="${VERSION_CODENAME:-}"
+if [ "$OS" = "ubuntu" ] && [[ "$CODENAME" =~ ^(focal|jammy|noble)$ ]]; then
+    echo -e "${BLUE}[*] Mendaftarkan PPA ondrej/php untuk Ubuntu ${CODENAME}...${NC}"
     add-apt-repository -y ppa:ondrej/php || true
-    apt-get update -y
+    apt-get update -y || rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php-*
+else
+    echo -e "${BLUE}[*] Menggunakan paket dependensi PHP resmi distro ${OS} (${CODENAME:-generic})...${NC}"
 fi
 
 # Ensure standalone PHP CLI and sqlite extensions are installed
@@ -64,16 +67,19 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     php-sqlite3 \
     php-curl \
     php-mbstring \
-    php-xml
+    php-xml || true
 
 # 4. Setup Isolated Directory Structure under /www
 echo -e "${BLUE}[3/7] Menyiapkan struktur direktori /www...${NC}"
-mkdir -p /www/panel /www/server /www/wwwroot /www/backup
+mkdir -p /www/server /www/wwwroot /www/backup
 
-# Copy panel application to /www/panel
+# Setup /www/panel if not already symlinked or located there
 SOURCE_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )/.." >/dev/null 2>&1 && pwd )"
-if [ "$SOURCE_DIR" != "/www/panel" ]; then
-    echo -e "${BLUE}[*] Menyalin file panel dari ${SOURCE_DIR} ke /www/panel...${NC}"
+if [ -L /www/panel ] && [ "$(readlink -f /www/panel)" = "$SOURCE_DIR" ]; then
+    echo -e "${GREEN}[✔] /www/panel sudah terhubung ke ${SOURCE_DIR}.${NC}"
+elif [ "$SOURCE_DIR" != "/www/panel" ]; then
+    echo -e "${BLUE}[*] Menyiapkan tautan /www/panel ke ${SOURCE_DIR}...${NC}"
+    mkdir -p /www/panel
     cp -rf "$SOURCE_DIR"/* /www/panel/
 fi
 
