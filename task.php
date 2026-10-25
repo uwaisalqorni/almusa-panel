@@ -12,10 +12,13 @@ if (php_sapi_name() !== 'cli') {
 
 define('PANEL_ROOT', __DIR__);
 require_once PANEL_ROOT . '/app/bootstrap.php';
-
 use App\Core\Database;
 
-$logFile = '/tmp/panelExec.log';
+$logFile = (defined('PANEL_ROOT') ? PANEL_ROOT : __DIR__) . '/data/panelExec.log';
+if (!file_exists($logFile)) {
+    @touch($logFile);
+    @chmod($logFile, 0666);
+}
 $running = true;
 
 // Signal handlers for graceful shutdown

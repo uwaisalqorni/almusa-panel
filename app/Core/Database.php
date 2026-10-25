@@ -114,7 +114,7 @@ class Database
             action TEXT NOT NULL,
             payload TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
-            log_file TEXT DEFAULT '/tmp/panelExec.log',
+            log_file TEXT DEFAULT 'data/panelExec.log',
             exit_code INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             started_at DATETIME,

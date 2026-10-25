@@ -187,7 +187,7 @@ $user = Auth::user();
 
         <div class="modal-terminal-footer">
             <div style="font-size: 11px; color: var(--text-muted);">
-                Streaming dari <code style="color: #60a5fa;">/tmp/panelExec.log</code>
+                Streaming dari <code style="color: #60a5fa;">data/panelExec.log</code>
             </div>
             <div style="display: flex; gap: 8px;">
                 <button type="button" class="btn btn-secondary btn-sm" id="btnToggleScroll" onclick="toggleAutoScroll()">

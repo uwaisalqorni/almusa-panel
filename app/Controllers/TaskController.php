@@ -8,7 +8,11 @@ use App\Core\Response;
 
 class TaskController
 {
-    private string $logFile = '/tmp/panelExec.log';
+    private function getLogFile(): string
+    {
+        $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
+        return $root . '/data/panelExec.log';
+    }
 
     public function status(): void
     {
@@ -30,10 +34,11 @@ class TaskController
         $stmtLast = $pdo->query("SELECT * FROM tasks WHERE status IN ('completed', 'failed') ORDER BY id DESC LIMIT 1");
         $lastTask = $stmtLast->fetch() ?: null;
 
-        // 4. Read last 100 lines of /tmp/panelExec.log
+        // 4. Read last 100 lines of data/panelExec.log
+        $logFile = $this->getLogFile();
         $logContent = '';
-        if (file_exists($this->logFile)) {
-            $logContent = self::tailFile($this->logFile, 100);
+        if (file_exists($logFile)) {
+            $logContent = self::tailFile($logFile, 100);
         }
 
         Response::json([
@@ -42,7 +47,7 @@ class TaskController
             'running_task'  => $runningTask,
             'last_task'     => $lastTask,
             'log'           => $logContent,
-            'log_size'      => file_exists($this->logFile) ? filesize($this->logFile) : 0,
+            'log_size'      => file_exists($logFile) ? filesize($logFile) : 0,
             'timestamp'     => time(),
         ]);
     }
@@ -69,8 +74,9 @@ class TaskController
             Response::json(['success' => false, 'error' => 'Unauthorized'], 401);
         }
 
-        if (file_exists($this->logFile)) {
-            @file_put_contents($this->logFile, "[System] Log cleared at " . date('Y-m-d H:i:s') . "\n");
+        $logFile = $this->getLogFile();
+        if (file_exists($logFile)) {
+            @file_put_contents($logFile, "[System] Log cleared at " . date('Y-m-d H:i:s') . "\n");
         }
 
         Response::json([
