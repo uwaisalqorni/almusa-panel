@@ -69,6 +69,10 @@ class DatabaseController
             Response::json(['success' => false, 'error' => 'Username database harus 1-64 karakter alfanumerik & underscore.'], 400);
         }
 
+        if (!preg_match('/^[a-zA-Z0-9_.%-]{1,64}$/', $accessHost)) {
+            $accessHost = '127.0.0.1';
+        }
+
         if (strlen($dbPass) < 6) {
             Response::json(['success' => false, 'error' => 'Password minimal 6 karakter.'], 400);
         }
@@ -93,13 +97,9 @@ class DatabaseController
             // 1. Create database
             $mysql->exec("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET {$charset} COLLATE {$collate};");
 
-            // 2. Create user with prepared statements
-            $stmtUser = $mysql->prepare("CREATE USER IF NOT EXISTS :user@:host IDENTIFIED BY :pass");
-            $stmtUser->execute([
-                ':user' => $dbUser,
-                ':host' => $accessHost,
-                ':pass' => $dbPass,
-            ]);
+            // 2. Create user (DDL does not allow prepared placeholders, quote password safely)
+            $quotedPass = $mysql->quote($dbPass);
+            $mysql->exec("CREATE USER IF NOT EXISTS '{$dbUser}'@'{$accessHost}' IDENTIFIED BY {$quotedPass};");
 
             // 3. Grant privileges
             $mysql->exec("GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$dbUser}'@'{$accessHost}';");
@@ -151,12 +151,12 @@ class DatabaseController
         try {
             $mysql = $this->getMysqlConnection('127.0.0.1', (int)$db['db_port']);
 
-            $alter = $mysql->prepare("ALTER USER :user@:host IDENTIFIED BY :pass");
-            $alter->execute([
-                ':user' => $user,
-                ':host' => $host,
-                ':pass' => $newPass,
-            ]);
+            if (!preg_match('/^[a-zA-Z0-9_]{1,64}$/', $user) || !preg_match('/^[a-zA-Z0-9_.%-]{1,64}$/', $host)) {
+                Response::json(['success' => false, 'error' => 'Format username atau host database tidak valid.'], 400);
+            }
+
+            $quotedPass = $mysql->quote($newPass);
+            $mysql->exec("ALTER USER '{$user}'@'{$host}' IDENTIFIED BY {$quotedPass};");
             $mysql->exec("FLUSH PRIVILEGES;");
 
             $update = $pdoSqlite->prepare("UPDATE databases SET db_password_enc = :pass WHERE id = :id");
@@ -191,10 +191,12 @@ class DatabaseController
         try {
             $mysql = $this->getMysqlConnection('127.0.0.1', (int)$db['db_port']);
 
-            $mysql->exec("DROP DATABASE IF EXISTS `{$dbName}`;");
-            
-            $dropUser = $mysql->prepare("DROP USER IF EXISTS :user@:host");
-            $dropUser->execute([':user' => $dbUser, ':host' => $host]);
+            if (preg_match('/^[a-zA-Z0-9_]{1,64}$/', $dbName)) {
+                $mysql->exec("DROP DATABASE IF EXISTS `{$dbName}`;");
+            }
+            if (preg_match('/^[a-zA-Z0-9_]{1,64}$/', $dbUser) && preg_match('/^[a-zA-Z0-9_.%-]{1,64}$/', $host)) {
+                $mysql->exec("DROP USER IF EXISTS '{$dbUser}'@'{$host}';");
+            }
 
             $mysql->exec("FLUSH PRIVILEGES;");
 
