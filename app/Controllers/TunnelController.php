@@ -110,7 +110,17 @@ class TunnelController
             Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
         }
 
+        $siteDomain = $site['domain'];
         $tunnelId = Database::getSetting('cf_tunnel_id', '');
+
+        // Detect host local LAN IP so container or local proxy can reach port 8088
+        $localIp = '127.0.0.1';
+        $ipCmd = shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7}'");
+        $ipTrim = trim((string)$ipCmd);
+        if (!empty($ipTrim) && filter_var($ipTrim, FILTER_VALIDATE_IP)) {
+            $localIp = $ipTrim;
+        }
+        $localService = "http://{$localIp}:8088";
 
         try {
             // 1. Get Zone ID
@@ -120,7 +130,7 @@ class TunnelController
             }
 
             // 2. Add Ingress Rule
-            $cfApi->addPublicHostname($hostname, 'http://127.0.0.1:8088');
+            $cfApi->addPublicHostname($hostname, $localService, $siteDomain);
 
             // 3. Upsert CNAME
             $cnameTarget = "{$tunnelId}.cfargotunnel.com";
@@ -131,13 +141,18 @@ class TunnelController
             $update = $pdo->prepare("UPDATE sites SET tunnel_mode = 'custom', tunnel_url = :url WHERE id = :id");
             $update->execute([':url' => $url, ':id' => $siteId]);
 
+            // Clean up previous tunnel entry for this site
+            $del = $pdo->prepare("DELETE FROM tunnels WHERE site_id = :sid");
+            $del->execute([':sid' => $siteId]);
+
             $ins = $pdo->prepare("
                 INSERT INTO tunnels (site_id, tunnel_type, public_hostname, local_service, status)
-                VALUES (:sid, 'custom', :host, 'http://127.0.0.1:8088', 'running')
+                VALUES (:sid, 'custom', :host, :service, 'running')
             ");
             $ins->execute([
-                ':sid'  => $siteId,
-                ':host' => $url,
+                ':sid'     => $siteId,
+                ':host'    => $url,
+                ':service' => $localService,
             ]);
 
             Response::json([

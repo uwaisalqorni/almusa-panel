@@ -79,7 +79,7 @@ class CloudflareApi
         return $result[0]['id'] ?? null;
     }
 
-    public function addPublicHostname(string $hostname, string $service = 'http://127.0.0.1:80'): bool
+    public function addPublicHostname(string $hostname, string $service = 'http://127.0.0.1:8088', ?string $httpHostHeader = null): bool
     {
         $endpoint = "/accounts/{$this->accountId}/cfd_tunnel/{$this->tunnelId}/configurations";
         $current = $this->request('GET', $endpoint);
@@ -95,17 +95,29 @@ class CloudflareApi
             if (($rule['hostname'] ?? '') === $hostname) {
                 continue; // will be replaced
             }
+            // Fix: Go backend fails if originRequest is an empty array []
+            if (isset($rule['originRequest']) && empty($rule['originRequest'])) {
+                unset($rule['originRequest']);
+            }
             $filtered[] = $rule;
         }
 
         // Add new ingress rule
-        array_unshift($filtered, [
-            'hostname'      => $hostname,
-            'service'       => $service,
-            'originRequest' => [
-                'httpHostHeader' => $hostname,
-            ],
-        ]);
+        $newRule = [
+            'hostname' => $hostname,
+            'service'  => $service,
+        ];
+
+        $originRequest = [];
+        if (!empty($httpHostHeader)) {
+            $originRequest['httpHostHeader'] = $httpHostHeader;
+        }
+
+        if (!empty($originRequest)) {
+            $newRule['originRequest'] = $originRequest;
+        }
+
+        array_unshift($filtered, $newRule);
 
         // Append final catch-all rule
         $filtered[] = ['service' => 'http_status:404'];
@@ -134,6 +146,10 @@ class CloudflareApi
             }
             if (($rule['service'] ?? '') === 'http_status:404' && empty($rule['hostname'])) {
                 continue;
+            }
+            // Fix: Go backend fails if originRequest is an empty array []
+            if (isset($rule['originRequest']) && empty($rule['originRequest'])) {
+                unset($rule['originRequest']);
             }
             $filtered[] = $rule;
         }
