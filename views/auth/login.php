@@ -56,7 +56,9 @@
                 </div>
             </div>
 
-            <button type="submit" class="btn btn-primary btn-lg btn-block" style="margin-top:8px">Masuk</button>
+            <button type="submit" class="btn btn-primary btn-lg btn-block" style="margin-top:8px" <?= !empty($is_locked) ? 'disabled style="margin-top:8px;opacity:0.6;cursor:not-allowed"' : '' ?>>
+                <?= !empty($is_locked) ? 'Akses Terkunci' : 'Masuk' ?>
+            </button>
         </form>
 
         <div class="auth-foot">

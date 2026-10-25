@@ -138,6 +138,15 @@ class Database
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
         );
+
+        -- 7. Login Attempts & Rate Limiting
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip_address TEXT NOT NULL UNIQUE,
+            attempts INTEGER NOT NULL DEFAULT 1,
+            last_attempt_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            locked_until DATETIME DEFAULT NULL
+        );
 SQL;
 
         $pdo->exec($schema);

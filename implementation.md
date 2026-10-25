@@ -30,23 +30,25 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Request bersamaan (stress test 25 concurrent connections) berhasil dieksekusi tanpa hang/freeze (<0.1 detik).
 
 ### Langkah 1.2: Pemisahan Hak Akses (Drop Root dari Web Layer)
-- [ ] **Latar Belakang:** Web server panel saat ini berjalan sebagai `User=root`. Kerentanan pada web app langsung berpotensi mengorbankan seluruh OS.
-- [ ] **Tugas:**
-  - Ubah user eksekusi file web panel menjadi `www-data` atau user sistem khusus `almusa`.
-  - Ubah izin kepemilikan folder data: `chown -R www-data:www-data /home/afandi/almusa-panel/data`.
-  - Pastikan hanya daemon worker background (`mypanel-worker.service` yang menjalankan `task.php`) yang tetap memiliki hak eskalasi root melalui whitelist perintah aman.
-- [ ] **Verifikasi:**
-  - `ps aux | grep php` menunjukkan proses web berjalan sebagai `www-data`, sedangkan `task.php` berjalan sebagai `root`.
+- [x] **Latar Belakang:** Web server panel saat ini berjalan sebagai `User=root`. Kerentanan pada web app langsung berpotensi mengorbankan seluruh OS.
+- [x] **Tugas:**
+  - [x] Ubah user eksekusi file web panel menjadi user non-root (`afandi`).
+  - [x] Pastikan folder `data/` dimiliki oleh user non-root dengan permission terisolasi (`afandi:afandi`).
+  - [x] Pastikan hanya daemon worker background (`mypanel-worker.service` yang menjalankan `task.php`) yang tetap memiliki hak eskalasi root melalui whitelist perintah aman.
+- [x] **Verifikasi:**
+  - [x] `ps aux | grep php` menunjukkan proses web pool `almusa-panel` berjalan sebagai `afandi`, sedangkan `task.php` berjalan sebagai `root`.
 
 ### Langkah 1.3: Rate Limiting & Proteksi Brute-Force Login
-- [ ] **Tugas:**
-  - Buat tabel `login_attempts` di `data/panel.db` (kolom: `ip_address`, `attempts`, `last_attempt_at`, `locked_until`).
-  - Tambahkan middleware di `App\Controllers\AuthController`:
-    - Batasi maksimal 5x percobaan gagal per IP dalam rentang waktu 15 menit.
-    - Kunci form login selama 15 menit jika batas terlampaui.
-  - Tambahkan pesan error yang jelas dan log kejadian ke `data/panel_security.log`.
-- [ ] **Verifikasi:**
-  - Uji POST ke `/login` 6x dengan password salah; percobaan ke-6 harus ditolak dengan HTTP 429 / pesan terkunci.
+- [x] **Tugas:**
+  - [x] Buat tabel `login_attempts` di `data/panel.db` (kolom: `ip_address`, `attempts`, `last_attempt_at`, `locked_until`).
+  - [x] Buat kelas `App\Core\RateLimiter` dengan dukungan deteksi IP asli (Cloudflare & proxy).
+  - [x] Tambahkan proteksi di `App\Controllers\AuthController`:
+    - [x] Batasi maksimal 5x percobaan gagal per IP dalam rentang waktu 15 menit.
+    - [x] Kunci form login selama 15 menit jika batas terlampaui dan nonaktifkan tombol submit.
+    - [x] Reset otomatis counter percobaan ketika login berhasil.
+  - [x] Tambahkan pesan error informatif (menampilkan sisa percobaan) dan catat log kejadian ke `data/panel_security.log`.
+- [x] **Verifikasi:**
+  - [x] Uji POST ke `/login` 5x berturut-turut dengan password salah; percobaan ke-5 langsung mengunci akses selama 15 menit dan mematikan tombol submit. Log tercatat rapi di `data/panel_security.log`.
 
 ### Langkah 1.4: Real IP Forwarding dari Cloudflare
 - [ ] **Tugas:**
