@@ -52,6 +52,9 @@ while ($running) {
             // Mark as processing
             $update = $pdo->prepare("UPDATE tasks SET status = 'processing', started_at = CURRENT_TIMESTAMP WHERE id = :id");
             $update->execute([':id' => $taskId]);
+            $update = null;
+            $pdo = null;
+            Database::reset();
 
             // Append start banner to log file
             $startBanner = "\n======================================================\n";
@@ -67,7 +70,7 @@ while ($running) {
                 $err = "[ERROR] Unrecognized or disallowed task action: '{$action}'. Skipped.\n";
                 @file_put_contents($logFile, $err, FILE_APPEND);
             } else {
-                // Execute command and stream output directly into /tmp/panelExec.log
+                // Execute command and stream output directly into log file
                 $fullCmd = "{$command} >> " . escapeshellarg($logFile) . " 2>&1";
                 @file_put_contents($logFile, "[EXEC] {$command}\n\n", FILE_APPEND);
                 
@@ -79,7 +82,8 @@ while ($running) {
             $endBanner .= "------------------------------------------------------\n";
             @file_put_contents($logFile, $endBanner, FILE_APPEND);
 
-            // Update task status in database
+            // Re-open clean database connection to update final status
+            $pdo = Database::getInstance();
             $status = ($exitCode === 0) ? 'completed' : 'failed';
             $finalUpdate = $pdo->prepare("
                 UPDATE tasks 
@@ -91,13 +95,30 @@ while ($running) {
                 ':code'   => $exitCode,
                 ':id'     => $taskId,
             ]);
+            $finalUpdate = null;
+            $pdo = null;
+            Database::reset();
 
             echo "[" . date('Y-m-d H:i:s') . "] Task #{$taskId} {$status} (Exit Code: {$exitCode})\n";
+            $taskId = null;
         }
     } catch (\Throwable $e) {
         $msg = "[" . date('Y-m-d H:i:s') . "] Daemon Exception: " . $e->getMessage() . "\n";
         echo $msg;
         @file_put_contents($logFile, $msg, FILE_APPEND);
+        Database::reset();
+
+        // If a task failed during final status update, attempt a retry with fresh connection
+        if (isset($taskId) && $taskId !== null) {
+            try {
+                $retryPdo = Database::getInstance();
+                $retry = $retryPdo->prepare("UPDATE tasks SET status = :s, exit_code = :c, finished_at = CURRENT_TIMESTAMP WHERE id = :id");
+                $retry->execute([':s' => ($exitCode === 0 ? 'completed' : 'failed'), ':c' => $exitCode, ':id' => $taskId]);
+            } catch (\Throwable $e2) {
+                // Ignore secondary error
+            }
+            $taskId = null;
+        }
     }
 
     sleep(1);

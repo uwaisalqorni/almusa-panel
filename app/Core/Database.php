@@ -20,6 +20,11 @@ class Database
         }
     }
 
+    public static function reset(): void
+    {
+        self::$instance = null;
+    }
+
     public static function getInstance(): PDO
     {
         if (self::$instance === null) {
