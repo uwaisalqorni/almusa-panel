@@ -20,14 +20,14 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
 > **Tujuan:** Menghilangkan kelemahan arsitektur kritis (`php -S` dan eksekusi web sebagai `root`), membatasi brute-force, dan memastikan performa tinggi saat diakses bersamaan.
 
 ### Langkah 1.1: Migrasi Web Server Panel ke Nginx + PHP-FPM Khusus
-- [ ] **Latar Belakang:** `php -S` bersifat *single-threaded*, tidak tahan beban konkuren, dan tidak memiliki perlindungan HTTP modern.
-- [ ] **Tugas:**
-  - Buat pool PHP-FPM tersendiri untuk panel di `/etc/php/8.3/fpm/pool.d/almusa-panel.conf` yang mendengarkan di Unix Socket: `/run/almusa/panel.sock`.
-  - Buat konfigurasi vhost Nginx internal di `/etc/nginx/sites-available/almusa-panel.conf` yang mendengarkan di port `64448` (SSL via Cloudflare Tunnel atau lokal).
-  - Arahkan rute statis `/assets/*` dilayani langsung oleh Nginx (efisiensi caching & zero overhead PHP).
-  - Perbarui `mypanel-web.service` agar mengelola pool panel tersebut atau cukup memastikan socket aktif.
-- [ ] **Verifikasi:**
-  - Request bersamaan (stress test 20 concurrent connections) tidak membuat panel hang atau freeze.
+- [x] **Latar Belakang:** `php -S` bersifat *single-threaded*, tidak tahan beban konkuren, dan tidak memiliki perlindungan HTTP modern.
+- [x] **Tugas:**
+  - [x] Buat pool PHP-FPM tersendiri untuk panel di `config/panel-fpm.conf` yang mendengarkan di Unix Socket: `/run/php/almusa-panel.sock`.
+  - [x] Buat konfigurasi vhost Nginx internal di `config/nginx-panel.conf` yang mendengarkan di port `64448` (dilink ke `/etc/nginx/sites-enabled/almusa-panel.conf`).
+  - [x] Arahkan rute statis `/assets/*` dilayani langsung oleh Nginx (efisiensi caching & zero overhead PHP).
+  - [x] Perbarui `mypanel-web.service` agar mengelola pool dedicated PHP-FPM panel secara terisolasi.
+- [x] **Verifikasi:**
+  - [x] Request bersamaan (stress test 25 concurrent connections) berhasil dieksekusi tanpa hang/freeze (<0.1 detik).
 
 ### Langkah 1.2: Pemisahan Hak Akses (Drop Root dari Web Layer)
 - [ ] **Latar Belakang:** Web server panel saat ini berjalan sebagai `User=root`. Kerentanan pada web app langsung berpotensi mengorbankan seluruh OS.
