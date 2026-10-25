@@ -2,254 +2,200 @@
 /**
  * Almusa Control Panel - App Store & Plugins View
  */
+
+/** Badge status layanan */
+$statusBadge = static function (array $p, bool $hasActive = true): string {
+    if ($hasActive && !empty($p['active'])) return '<span class="badge badge-success">Berjalan</span>';
+    if (!empty($p['installed']))            return $hasActive
+        ? '<span class="badge badge-warning">Terpasang</span>'
+        : '<span class="badge badge-success">Siap</span>';
+    return '<span class="badge badge-neutral">Belum terpasang</span>';
+};
+
+$services = [
+    [
+        'key'   => 'nginx',
+        'icon'  => 'server',
+        'name'  => 'Nginx',
+        'tag'   => 'Web server & reverse proxy',
+        'desc'  => 'Web server berperforma tinggi dengan isolasi virtual host, aturan rewrite, dan HTTP/2.',
+        'badge' => $statusBadge($plugins['nginx']),
+        'installed' => $plugins['nginx']['installed'],
+        'install'   => 'Pasang Nginx',
+        'open'      => null,
+    ],
+    [
+        'key'   => 'mysql',
+        'icon'  => 'database',
+        'name'  => 'MySQL / MariaDB',
+        'tag'   => 'Database relasional',
+        'desc'  => 'Mesin database dengan charset utf8mb4 bawaan, manajemen user, dan backup dump.',
+        'badge' => $statusBadge($plugins['mysql']),
+        'installed' => $plugins['mysql']['installed'],
+        'install'   => 'Pasang MariaDB',
+        'open'      => ['/databases', 'Buka Databases'],
+    ],
+    [
+        'key'   => 'cloudflared',
+        'icon'  => 'cloud',
+        'name'  => 'Cloudflare Tunnel',
+        'tag'   => 'Akses online tanpa buka port',
+        'desc'  => 'Binary cloudflared untuk Quick Tunnel (trycloudflare.com) dan domain sendiri via Zero Trust.',
+        'badge' => $statusBadge($plugins['cloudflared'], false),
+        'installed' => $plugins['cloudflared']['installed'],
+        'install'   => 'Unduh cloudflared',
+        'open'      => ['/tunnels', 'Kelola Tunnel'],
+    ],
+];
 ?>
 
-<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+<header class="page-header">
     <div>
-        <h2 style="font-size: 20px; font-weight: 700; color: #ffffff;">App Store & Plugin Services</h2>
-        <p style="font-size: 13px; color: var(--text-muted);">Instalasi 1-klik untuk Web Server, Multi-versi PHP, Database, dan Utilitas Server</p>
+        <h1 class="page-title">App Store</h1>
+        <p class="page-desc">Pasang dan kelola web server, versi PHP, database, serta utilitas server.</p>
     </div>
-    <button type="button" class="btn btn-secondary btn-sm" onclick="openTaskTerminal()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="4 17 10 11 4 5"></polyline>
-            <line x1="12" y1="19" x2="20" y2="19"></line>
-        </svg>
-        Buka Terminal Eksekusi
-    </button>
-</div>
+    <div class="page-actions">
+        <button type="button" class="btn btn-secondary" onclick="openTaskTerminal()">
+            <?= ui_icon('terminal') ?> Buka terminal
+        </button>
+    </div>
+</header>
 
-<!-- CORE SERVICES GRID -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 32px;">
-    <!-- NGINX -->
-    <div class="card">
-        <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px;">
-            <div style="display: flex; gap: 14px;">
-                <div style="width: 44px; height: 44px; background: rgba(16, 185, 129, 0.15); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; color: #10b981; font-weight: 700;">
-                    NX
+<section class="grid grid-cards mb" aria-label="Layanan inti">
+    <?php foreach ($services as $s): ?>
+        <article class="card">
+            <div class="row" style="padding:0;border:0">
+                <span class="icon-tile"><?= ui_icon($s['icon']) ?></span>
+                <div class="row-main">
+                    <h2 class="row-title"><?= e($s['name']) ?></h2>
+                    <div class="row-sub"><?= e($s['tag']) ?></div>
                 </div>
-                <div>
-                    <h3 style="font-size: 16px; font-weight: 700; color: #ffffff;">Nginx Web Server</h3>
-                    <p style="font-size: 12px; color: var(--text-muted);">HTTP & Reverse Proxy</p>
-                </div>
+                <?= $s['badge'] ?>
             </div>
-            <?php if ($plugins['nginx']['active']): ?>
-                <span class="badge badge-success">Running</span>
-            <?php elseif ($plugins['nginx']['installed']): ?>
-                <span class="badge badge-warning">Installed</span>
-            <?php else: ?>
-                <span class="badge badge-neutral">Not Installed</span>
-            <?php endif; ?>
-        </div>
-        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 18px;">
-            Web server berkecepatan tinggi dengan isolasi Virtual Host, rewrite rules dinamis, dan HTTP/2.
-        </p>
-        <div style="display: flex; gap: 8px;">
-            <?php if (!$plugins['nginx']['installed']): ?>
-                <button class="btn btn-primary btn-sm" onclick="queuePluginAction('install', 'nginx', '')">
-                    Install Nginx
-                </button>
-            <?php else: ?>
-                <button class="btn btn-secondary btn-sm" onclick="queuePluginAction('install', 'nginx', '')">
-                    Reinstall / Update
-                </button>
-                <button class="btn btn-danger btn-sm" onclick="queuePluginAction('uninstall', 'nginx', '')">
-                    Uninstall
-                </button>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <!-- MYSQL / MARIADB -->
-    <div class="card">
-        <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px;">
-            <div style="display: flex; gap: 14px;">
-                <div style="width: 44px; height: 44px; background: rgba(245, 158, 11, 0.15); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; color: #f59e0b; font-weight: 700;">
-                    SQL
-                </div>
-                <div>
-                    <h3 style="font-size: 16px; font-weight: 700; color: #ffffff;">MySQL / MariaDB</h3>
-                    <p style="font-size: 12px; color: var(--text-muted);">Database Relasional</p>
-                </div>
+            <p class="text-2" style="font-size:13px;margin:14px 0 16px"><?= e($s['desc']) ?></p>
+            <div class="cell-actions" style="justify-content:flex-start">
+                <?php if (!$s['installed']): ?>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="queuePluginAction('install', '<?= e($s['key']) ?>', '')">
+                        <?= ui_icon('download') ?> <?= e($s['install']) ?>
+                    </button>
+                <?php else: ?>
+                    <?php if ($s['open']): ?>
+                        <a href="<?= e($s['open'][0]) ?>" class="btn btn-secondary btn-sm"><?= e($s['open'][1]) ?></a>
+                    <?php endif; ?>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="queuePluginAction('install', '<?= e($s['key']) ?>', '')">
+                        <?= ui_icon('refresh') ?> Pasang ulang
+                    </button>
+                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="queuePluginAction('uninstall', '<?= e($s['key']) ?>', '')">
+                        Hapus
+                    </button>
+                <?php endif; ?>
             </div>
-            <?php if ($plugins['mysql']['active']): ?>
-                <span class="badge badge-success">Running</span>
-            <?php elseif ($plugins['mysql']['installed']): ?>
-                <span class="badge badge-warning">Installed</span>
-            <?php else: ?>
-                <span class="badge badge-neutral">Not Installed</span>
-            <?php endif; ?>
-        </div>
-        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 18px;">
-            Mesin database aman dengan charset UTF8MB4 bawaan, user management, dan backup dump otomatis.
-        </p>
-        <div style="display: flex; gap: 8px;">
-            <?php if (!$plugins['mysql']['installed']): ?>
-                <button class="btn btn-primary btn-sm" onclick="queuePluginAction('install', 'mysql', '')">
-                    Install Native MariaDB
-                </button>
-            <?php else: ?>
-                <a href="/databases" class="btn btn-secondary btn-sm">Buka Database</a>
-                <button class="btn btn-danger btn-sm" onclick="queuePluginAction('uninstall', 'mysql', '')">
-                    Uninstall
-                </button>
-            <?php endif; ?>
-        </div>
-    </div>
+        </article>
+    <?php endforeach; ?>
+</section>
 
-    <!-- CLOUDFLARE TUNNEL -->
-    <div class="card">
-        <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px;">
-            <div style="display: flex; gap: 14px;">
-                <div style="width: 44px; height: 44px; background: rgba(6, 182, 212, 0.15); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; color: #06b6d4; font-weight: 700;">
-                    CF
-                </div>
-                <div>
-                    <h3 style="font-size: 16px; font-weight: 700; color: #ffffff;">Cloudflare Tunnel</h3>
-                    <p style="font-size: 12px; color: var(--text-muted);">Zero Trust Tunnel</p>
-                </div>
-            </div>
-            <?php if ($plugins['cloudflared']['installed']): ?>
-                <span class="badge badge-success">Siap</span>
-            <?php else: ?>
-                <span class="badge badge-neutral">Not Installed</span>
-            <?php endif; ?>
-        </div>
-        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 18px;">
-            Daemon resmi `cloudflared` untuk Quick Tunnel (.trycloudflare.com) & custom domain Zero Trust API.
-        </p>
-        <div style="display: flex; gap: 8px;">
-            <?php if (!$plugins['cloudflared']['installed']): ?>
-                <button class="btn btn-primary btn-sm" onclick="queuePluginAction('install', 'cloudflared', '')">
-                    Download Binary cloudflared
-                </button>
-            <?php else: ?>
-                <a href="/tunnels" class="btn btn-secondary btn-sm">Kelola Tunnels</a>
-                <button class="btn btn-danger btn-sm" onclick="queuePluginAction('uninstall', 'cloudflared', '')">
-                    Uninstall
-                </button>
-            <?php endif; ?>
-        </div>
-    </div>
-</div>
-
-<!-- PHP MULTI-VERSION MANAGER -->
-<div class="table-container">
-    <div class="table-header">
+<section class="card card-flush">
+    <div class="card-header">
         <div>
-            <h3 class="table-title">PHP Multi-Version Manager</h3>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-                Instal versi PHP yang Anda butuhkan. Setiap versi berjalan di socket PHP-FPM terpisah.
-            </p>
+            <h2 class="card-title">Versi PHP</h2>
+            <p class="card-desc">Setiap versi berjalan pada socket PHP-FPM terpisah.</p>
         </div>
     </div>
-
-    <table class="custom-table">
-        <thead>
-            <tr>
-                <th>Versi PHP</th>
-                <th>Socket FPM</th>
-                <th>Status Layanan</th>
-                <th>Ekstensi Tambahan</th>
-                <th>Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php foreach ($phpList as $ver => $info): ?>
-                <tr>
-                    <td>
-                        <strong style="color: #ffffff; font-size: 15px;">PHP <?= $ver ?></strong>
-                    </td>
-                    <td>
-                        <code>/run/php/php<?= $ver ?>-fpm.sock</code>
-                    </td>
-                    <td>
-                        <?php if ($info['active']): ?>
-                            <span class="badge badge-success">Running</span>
-                        <?php elseif ($info['installed']): ?>
-                            <span class="badge badge-warning">Stopped</span>
-                        <?php else: ?>
-                            <span class="badge badge-neutral">Not Installed</span>
-                        <?php endif; ?>
-                    </td>
-                    <td>
-                        <?php if ($info['installed']): ?>
-                            <button class="btn btn-secondary btn-sm" onclick="openExtModal('<?= $ver ?>')">
-                                Kelola Ekstensi (Redis, Imagick, dll)
-                            </button>
-                        <?php else: ?>
-                            <span style="color: var(--text-muted);">Tersedia setelah instalasi</span>
-                        <?php endif; ?>
-                    </td>
-                    <td>
-                        <?php if (!$info['installed']): ?>
-                            <button class="btn btn-primary btn-sm" onclick="queuePluginAction('install', 'php', '<?= $ver ?>')">
-                                Install PHP <?= $ver ?>
-                            </button>
-                        <?php else: ?>
-                            <button class="btn btn-secondary btn-sm" onclick="queuePluginAction('install', 'php', '<?= $ver ?>')">
-                                Update
-                            </button>
-                            <button class="btn btn-danger btn-sm" onclick="queuePluginAction('uninstall', 'php', '<?= $ver ?>')">
-                                Uninstall
-                            </button>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
-</div>
+    <div class="card-body">
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Versi</th>
+                        <th>Socket FPM</th>
+                        <th>Status</th>
+                        <th class="th-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($phpList as $ver => $info): ?>
+                    <tr>
+                        <td><div class="cell-title">PHP <?= e($ver) ?></div></td>
+                        <td><code>/run/php/php<?= e($ver) ?>-fpm.sock</code></td>
+                        <td>
+                            <?php if ($info['active']): ?>
+                                <span class="badge badge-success">Berjalan</span>
+                            <?php elseif ($info['installed']): ?>
+                                <span class="badge badge-warning">Berhenti</span>
+                            <?php else: ?>
+                                <span class="badge badge-neutral">Belum terpasang</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <div class="cell-actions">
+                                <?php if (!$info['installed']): ?>
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="queuePluginAction('install', 'php', <?= js_arg($ver) ?>)">
+                                        <?= ui_icon('download') ?> Pasang
+                                    </button>
+                                <?php else: ?>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="openExtModal(<?= js_arg($ver) ?>)">
+                                        <?= ui_icon('puzzle') ?> Ekstensi
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="queuePluginAction('install', 'php', <?= js_arg($ver) ?>)">
+                                        <?= ui_icon('refresh') ?> Perbarui
+                                    </button>
+                                    <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Hapus PHP <?= e($ver) ?>" aria-label="Hapus PHP <?= e($ver) ?>"
+                                            onclick="queuePluginAction('uninstall', 'php', <?= js_arg($ver) ?>)">
+                                        <?= ui_icon('trash') ?>
+                                    </button>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
 
 <script>
 async function queuePluginAction(action, plugin, version) {
-    const verb = action === 'install' ? 'menginstal' : 'menghapus';
-    const target = plugin.toUpperCase() + (version ? ' ' + version : '');
-    if (!confirm(`Yakin ingin ${verb} ${target}? Proses akan dijalankan oleh daemon di terminal background.`)) return;
+    var installing = action === 'install';
+    var target = plugin === 'php' ? 'PHP ' + version : ({ nginx: 'Nginx', mysql: 'MySQL / MariaDB', cloudflared: 'cloudflared' }[plugin] || plugin);
+
+    var ok = await Almusa.confirm({
+        title: installing ? 'Pasang ' + target : 'Hapus ' + target,
+        message: installing
+            ? 'Proses akan dijalankan oleh daemon di latar belakang. Anda bisa memantaunya di terminal.'
+            : target + ' akan dihapus dari server. Pastikan tidak ada website yang masih memakainya.',
+        confirmText: installing ? 'Pasang' : 'Hapus',
+        danger: !installing
+    });
+    if (!ok) return;
 
     try {
-        const url = action === 'install' ? '/api/plugins/install' : '/api/plugins/uninstall';
-        const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRF-TOKEN': csrf
-            },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&plugin=${encodeURIComponent(plugin)}&version=${encodeURIComponent(version)}`
-        });
-
-        const data = await res.json();
+        var data = await Almusa.post(installing ? '/api/plugins/install' : '/api/plugins/uninstall', { plugin: plugin, version: version });
         if (data.success) {
             openTaskTerminal();
         } else {
-            alert(data.error || 'Gagal menjadwalkan tugas.');
+            Almusa.toast(data.error || 'Gagal menjadwalkan tugas.', 'error');
         }
-    } catch (e) {
-        alert('Terjadi kesalahan koneksi.');
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
     }
 }
 
-function openExtModal(ver) {
-    const ext = prompt(`Masukkan nama ekstensi yang ingin diinstal untuk PHP ${ver} (contoh: redis, imagick, memcached, soap, xdebug):`);
+async function openExtModal(ver) {
+    var ext = await Almusa.prompt({
+        title: 'Pasang ekstensi PHP ' + ver,
+        message: 'Contoh: redis, imagick, memcached, soap, xdebug.',
+        label: 'Nama ekstensi',
+        placeholder: 'redis'
+    });
     if (!ext) return;
 
-    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-    fetch('/api/plugins/php/extension', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-CSRF-TOKEN': csrf
-        },
-        body: `_csrf_token=${encodeURIComponent(csrf)}&version=${encodeURIComponent(ver)}&extension=${encodeURIComponent(ext.trim())}&sub_action=install`
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            openTaskTerminal();
-        } else {
-            alert(data.error || 'Gagal menginstal ekstensi.');
-        }
-    });
+    try {
+        var data = await Almusa.post('/api/plugins/php/extension', { version: ver, extension: ext.trim(), sub_action: 'install' });
+        if (data.success) openTaskTerminal();
+        else Almusa.toast(data.error || 'Gagal memasang ekstensi.', 'error');
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+    }
 }
 </script>

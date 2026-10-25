@@ -1,73 +1,71 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= htmlspecialchars($title ?? 'Masuk - Almusa Server Panel') ?></title>
+    <meta name="robots" content="noindex, nofollow">
+    <title>Masuk · <?= e($title ?? 'Almusa Server Panel') ?></title>
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
     <link rel="alternate icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/assets/css/panel.css">
+    <script src="/assets/js/theme.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Plus Jakarta Sans', -apple-system, sans-serif; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/css/panel.css">
 </head>
-<body class="login-body">
+<body>
+<?php require __DIR__ . '/../layouts/_icons.php'; ?>
 
-    <div class="login-card">
-        <div class="login-brand-header">
-            <div class="login-logo">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-                    <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-                    <line x1="6" y1="6" x2="6.01" y2="6"></line>
-                    <line x1="6" y1="18" x2="6.01" y2="18"></line>
-                </svg>
+<main class="auth-page">
+    <button type="button" class="icon-btn auth-theme" onclick="toggleTheme()" aria-label="Ganti tema" title="Ganti tema terang / gelap">
+        <span data-show="dark"><?= ui_icon('sun', 'icon-lg') ?></span>
+        <span data-show="light"><?= ui_icon('moon', 'icon-lg') ?></span>
+    </button>
+
+    <div class="auth-card">
+        <div class="auth-brand">
+            <div class="brand-mark"><?= ui_icon('layers') ?></div>
+            <div>
+                <h1 class="auth-title"><?= e($title ?? 'Almusa Server Panel') ?></h1>
+                <p class="auth-sub">Masuk untuk mengelola server Anda</p>
             </div>
-            <h1 class="login-title"><?= htmlspecialchars($title ?? 'Almusa Server Panel') ?></h1>
-            <p class="login-subtitle">Masuk untuk mengelola server, website & database Anda</p>
         </div>
 
         <?php if (!empty($error)): ?>
-            <div class="alert alert-danger">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
-                <span><?= htmlspecialchars($error) ?></span>
+            <div class="alert alert-danger" role="alert">
+                <?= ui_icon('alert-circle') ?>
+                <span><?= e($error) ?></span>
             </div>
         <?php endif; ?>
 
         <form method="POST" action="/login" autocomplete="off">
-            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars($csrf_token ?? '') ?>">
+            <input type="hidden" name="_csrf_token" value="<?= e($csrf_token ?? '') ?>">
 
-            <div class="form-group">
-                <label class="form-label" for="username">Username Administrator</label>
-                <input type="text" id="username" name="username" class="form-control" placeholder="admin" required autofocus>
+            <div class="field">
+                <label class="label" for="username">Username</label>
+                <input type="text" id="username" name="username" class="input" placeholder="admin" autocomplete="username" required autofocus>
             </div>
 
-            <div class="form-group" style="margin-bottom: 28px;">
-                <label class="form-label" for="password">Password</label>
-                <input type="password" id="password" name="password" class="form-control" placeholder="••••••••••••" required>
+            <div class="field">
+                <label class="label" for="password">Password</label>
+                <div class="input-group">
+                    <input type="password" id="password" name="password" class="input has-reveal" placeholder="Masukkan password" autocomplete="current-password" required>
+                    <button type="button" class="icon-btn reveal" data-toggle-password="password" aria-label="Tampilkan password">
+                        <?= ui_icon('eye') ?>
+                    </button>
+                </div>
             </div>
 
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 14px;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
-                    <polyline points="10 17 15 12 10 7"></polyline>
-                    <line x1="15" y1="12" x2="3" y2="12"></line>
-                </svg>
-                Masuk ke Panel
-            </button>
+            <button type="submit" class="btn btn-primary btn-lg btn-block" style="margin-top:8px">Masuk</button>
         </form>
 
-        <div style="text-align: center; margin-top: 24px; font-size: 11px; color: var(--text-muted);">
-            Isolated Engine • Zero Web-Root RCE • Protected Entrance Guard
+        <div class="auth-foot">
+            <?= ui_icon('lock') ?>
+            <span>Akses terlindungi · sesi dienkripsi</span>
         </div>
     </div>
+</main>
 
+<script src="/assets/js/panel.js"></script>
 </body>
 </html>

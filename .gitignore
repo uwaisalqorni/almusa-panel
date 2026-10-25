@@ -1,6 +1,7 @@
 # Sensitive & Private Planning Files
 passroot-saya.md
 plan.md
+cf-token.md
 
 # Runtime Panel Database & Generated Credentials
 data/panel.db

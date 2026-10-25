@@ -11,6 +11,9 @@ ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 ini_set('error_log', PANEL_ROOT . '/data/panel_error.log');
 
+// View helpers (e(), ui_icon(), js_arg())
+require_once __DIR__ . '/helpers.php';
+
 // PSR-4 Autoloader for App namespace
 spl_autoload_register(function ($class) {
     $prefix = 'App\\';

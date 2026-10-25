@@ -4,265 +4,233 @@
  */
 ?>
 
-<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+<header class="page-header">
     <div>
-        <h2 style="font-size: 20px; font-weight: 700; color: #ffffff;">Database MySQL & MariaDB</h2>
-        <p style="font-size: 13px; color: var(--text-muted);">Kelola database, user privileges, backup dump berkala, dan enforce UTF8MB4 Unicode</p>
+        <h1 class="page-title">Databases</h1>
+        <p class="page-desc">Kelola database MySQL / MariaDB, hak akses user, dan backup.</p>
     </div>
-    <div style="display: flex; gap: 10px;">
+    <div class="page-actions">
         <button type="button" class="btn btn-primary" onclick="openAddDbModal()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-            </svg>
-            Tambah Database Baru
+            <?= ui_icon('plus') ?> Tambah database
         </button>
     </div>
-</div>
+</header>
 
 <?php if (!$isServiceRunning): ?>
-    <div class="alert alert-danger" style="margin-bottom: 20px;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-        <span>Layanan MySQL / MariaDB sedang tidak aktif. Buka menu <strong>App Store</strong> untuk menginstal atau menjalankan service.</span>
+    <div class="alert alert-warning mb" role="alert">
+        <?= ui_icon('alert-triangle') ?>
+        <span>Layanan MySQL / MariaDB sedang tidak aktif. Buka <a href="/plugins">App Store</a> untuk memasang atau menjalankannya.</span>
     </div>
 <?php endif; ?>
 
-<div class="table-container">
-    <table class="custom-table">
-        <thead>
-            <tr>
-                <th>Nama Database</th>
-                <th>Database User</th>
-                <th>Password</th>
-                <th>Engine</th>
-                <th>Port</th>
-                <th>Charset</th>
-                <th>Host Akses</th>
-                <th>Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php if (empty($databases)): ?>
-                <tr>
-                    <td colspan="8" style="text-align: center; padding: 48px; color: var(--text-muted);">
-                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin: 0 auto 12px; display: block; opacity: 0.5;">
-                            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-                        </svg>
-                        Belum ada database yang ditambahkan. Klik <strong>Tambah Database Baru</strong> untuk provisioning.
-                    </td>
-                </tr>
-            <?php else: ?>
-                <?php foreach ($databases as $db): ?>
+<section class="card card-flush">
+    <div class="card-body">
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Database</th>
+                        <th>User</th>
+                        <th>Password</th>
+                        <th>Koneksi</th>
+                        <th>Charset</th>
+                        <th class="th-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php if (empty($databases)): ?>
+                    <tr>
+                        <td colspan="6">
+                            <div class="empty">
+                                <?= ui_icon('database', 'icon-xl') ?>
+                                <div class="empty-title">Belum ada database</div>
+                                <p class="empty-text">Buat database beserta user-nya dalam satu langkah.</p>
+                                <button type="button" class="btn btn-primary" onclick="openAddDbModal()"><?= ui_icon('plus') ?> Tambah database</button>
+                            </div>
+                        </td>
+                    </tr>
+                <?php else: foreach ($databases as $db):
+                    $plain = base64_decode($db['db_password_enc'] ?? '') ?: '';
+                ?>
                     <tr>
                         <td>
-                            <strong style="color: #ffffff; font-size: 14px;"><?= htmlspecialchars($db['db_name']) ?></strong>
+                            <div class="cell-title"><?= e($db['db_name']) ?></div>
+                            <div class="cell-sub"><?= e(strtoupper((string)$db['db_engine'])) ?></div>
+                        </td>
+                        <td><code><?= e($db['db_user']) ?></code></td>
+                        <td>
+                            <?php if ($plain !== ''): ?>
+                                <span class="secret" data-secret="<?= e($plain) ?>">
+                                    <code class="secret-text">••••••••••</code>
+                                    <button type="button" class="icon-btn btn-sm" data-reveal title="Tampilkan / sembunyikan" aria-label="Tampilkan password"><?= ui_icon('eye') ?></button>
+                                    <button type="button" class="icon-btn btn-sm" data-copy="<?= e($plain) ?>" title="Salin password" aria-label="Salin password"><?= ui_icon('copy') ?></button>
+                                </span>
+                            <?php else: ?>
+                                <span class="text-3">—</span>
+                            <?php endif; ?>
                         </td>
                         <td>
-                            <code><?= htmlspecialchars($db['db_user']) ?></code>
+                            <div class="cell-title num"><?= e($db['access_host']) ?>:<?= e($db['db_port']) ?></div>
                         </td>
+                        <td><span class="badge badge-neutral no-dot"><?= e($db['charset']) ?></span></td>
                         <td>
-                            <span style="font-family: monospace; background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; font-size: 12px;">
-                                <?= htmlspecialchars(base64_decode($db['db_password_enc'] ?? '')) ?>
-                            </span>
-                        </td>
-                        <td>
-                            <span class="badge badge-info"><?= strtoupper(htmlspecialchars($db['db_engine'])) ?></span>
-                        </td>
-                        <td><?= htmlspecialchars($db['db_port']) ?></td>
-                        <td><code><?= htmlspecialchars($db['charset']) ?></code></td>
-                        <td><?= htmlspecialchars($db['access_host']) ?></td>
-                        <td>
-                            <div style="display: flex; gap: 6px;">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="backupDb(<?= $db['id'] ?>, '<?= htmlspecialchars($db['db_name']) ?>')">
-                                    Backup
+                            <div class="cell-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="backupDb(<?= (int)$db['id'] ?>, <?= js_arg($db['db_name']) ?>)">
+                                    <?= ui_icon('archive') ?> Backup
                                 </button>
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="changeDbPass(<?= $db['id'] ?>, '<?= htmlspecialchars($db['db_user']) ?>')">
-                                    Ganti Pass
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="changeDbPass(<?= (int)$db['id'] ?>, <?= js_arg($db['db_user']) ?>)">
+                                    <?= ui_icon('key') ?> Password
                                 </button>
-                                <button type="button" class="btn btn-danger btn-sm" onclick="deleteDb(<?= $db['id'] ?>, '<?= htmlspecialchars($db['db_name']) ?>')">
-                                    Hapus
+                                <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Hapus database" aria-label="Hapus <?= e($db['db_name']) ?>"
+                                        onclick="deleteDb(<?= (int)$db['id'] ?>, <?= js_arg($db['db_name']) ?>)">
+                                    <?= ui_icon('trash') ?>
                                 </button>
                             </div>
                         </td>
                     </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </tbody>
-    </table>
-</div>
-
-<!-- MODAL ADD DATABASE -->
-<div class="modal-backdrop" id="addDbModal">
-    <div class="card" style="width: 100%; max-width: 500px; box-shadow: 0 25px 60px rgba(0,0,0,0.8);">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-            <h3 style="font-size: 18px; font-weight: 700; color: #ffffff;">Buat Database Baru</h3>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="closeAddDbModal()">✕</button>
+                <?php endforeach; endif; ?>
+                </tbody>
+            </table>
         </div>
+    </div>
+</section>
 
+<!-- Tambah database -->
+<div class="modal-backdrop" id="addDbModal">
+    <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="addDbTitle">
+        <div class="modal-header">
+            <div>
+                <h2 class="modal-title" id="addDbTitle">Tambah database</h2>
+                <p class="modal-subtitle">Database baru akan dibuat bersama user dan hak aksesnya.</p>
+            </div>
+            <button type="button" class="icon-btn" onclick="closeAddDbModal()" aria-label="Tutup"><?= ui_icon('x') ?></button>
+        </div>
         <form id="addDbForm" onsubmit="submitAddDb(event)">
-            <div class="form-group">
-                <label class="form-label">Nama Database</label>
-                <input type="text" id="dbName" class="form-control" placeholder="app_db" pattern="^[a-zA-Z0-9_]{1,64}$" required>
-                <div class="form-help">Hanya huruf, angka, dan underscore (_). Maksimal 64 karakter.</div>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Username Database</label>
-                <input type="text" id="dbUser" class="form-control" placeholder="app_user" pattern="^[a-zA-Z0-9_]{1,64}$" required>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Password User</label>
-                <input type="password" id="dbPass" class="form-control" placeholder="••••••••••••" required minlength="6">
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                <div class="form-group">
-                    <label class="form-label">Charset</label>
-                    <select id="dbCharset" class="form-control">
-                        <option value="utf8mb4" selected>utf8mb4 (Rekomendasi)</option>
-                        <option value="utf8">utf8</option>
-                        <option value="latin1">latin1</option>
-                    </select>
+            <div class="modal-body">
+                <div class="field">
+                    <label class="label" for="dbName">Nama database</label>
+                    <input type="text" id="dbName" class="input" placeholder="app_db" pattern="^[a-zA-Z0-9_]{1,64}$" required>
+                    <div class="help">Huruf, angka, dan underscore. Maksimal 64 karakter.</div>
                 </div>
-
-                <div class="form-group">
-                    <label class="form-label">Host Akses</label>
-                    <input type="text" id="dbHost" class="form-control" value="127.0.0.1" required>
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="dbUser">Username</label>
+                        <input type="text" id="dbUser" class="input" placeholder="app_user" pattern="^[a-zA-Z0-9_]{1,64}$" required>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="dbPass">Password</label>
+                        <div class="input-group">
+                            <input type="password" id="dbPass" class="input has-reveal" minlength="6" required autocomplete="new-password">
+                            <button type="button" class="icon-btn reveal" data-toggle-password="dbPass" aria-label="Tampilkan password"><?= ui_icon('eye') ?></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="dbCharset">Charset</label>
+                        <select id="dbCharset" class="select">
+                            <option value="utf8mb4" selected>utf8mb4 (disarankan)</option>
+                            <option value="utf8">utf8</option>
+                            <option value="latin1">latin1</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="dbHost">Host akses</label>
+                        <input type="text" id="dbHost" class="input" value="127.0.0.1" required>
+                    </div>
                 </div>
             </div>
-
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+            <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeAddDbModal()">Batal</button>
-                <button type="submit" class="btn btn-primary">Buat Database</button>
+                <button type="submit" class="btn btn-primary" id="addDbSubmit">Buat database</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-function openAddDbModal() {
-    document.getElementById('addDbModal').classList.add('show');
-}
-
-function closeAddDbModal() {
-    document.getElementById('addDbModal').classList.remove('show');
-}
+function openAddDbModal()  { Almusa.openModal('addDbModal'); setTimeout(function () { document.getElementById('dbName').focus(); }, 50); }
+function closeAddDbModal() { Almusa.closeModal('addDbModal'); }
 
 async function submitAddDb(e) {
     e.preventDefault();
-    const db_name = document.getElementById('dbName').value.trim();
-    const db_user = document.getElementById('dbUser').value.trim();
-    const db_password = document.getElementById('dbPass').value;
-    const charset = document.getElementById('dbCharset').value;
-    const access_host = document.getElementById('dbHost').value.trim();
-    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-
+    var restore = Almusa.busy(document.getElementById('addDbSubmit'), 'Membuat…');
     try {
-        const res = await fetch('/api/databases/create', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRF-TOKEN': csrf
-            },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&db_name=${encodeURIComponent(db_name)}&db_user=${encodeURIComponent(db_user)}&db_password=${encodeURIComponent(db_password)}&charset=${encodeURIComponent(charset)}&access_host=${encodeURIComponent(access_host)}`
+        var data = await Almusa.post('/api/databases/create', {
+            db_name: document.getElementById('dbName').value.trim(),
+            db_user: document.getElementById('dbUser').value.trim(),
+            db_password: document.getElementById('dbPass').value,
+            charset: document.getElementById('dbCharset').value,
+            access_host: document.getElementById('dbHost').value.trim()
         });
-
-        const data = await res.json();
         if (data.success) {
-            alert(data.message);
             closeAddDbModal();
-            location.reload();
+            Almusa.reload(data.message || 'Database berhasil dibuat.', 'success');
         } else {
-            alert(data.error || 'Gagal membuat database.');
+            Almusa.toast(data.error || 'Gagal membuat database.', 'error');
+            restore();
         }
     } catch (err) {
-        alert('Terjadi kesalahan jaringan.');
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+        restore();
     }
 }
 
 async function changeDbPass(id, username) {
-    const newPass = prompt(`Masukkan password baru untuk user '${username}':`);
-    if (!newPass || newPass.length < 6) {
-        if (newPass) alert('Password minimal 6 karakter.');
-        return;
-    }
+    var newPass = await Almusa.prompt({
+        title: 'Ganti password',
+        message: "Masukkan password baru untuk user '" + username + "'.",
+        label: 'Password baru',
+        type: 'password',
+        minLength: 6
+    });
+    if (!newPass) return;
 
-    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     try {
-        const res = await fetch('/api/databases/change-password', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRF-TOKEN': csrf
-            },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&id=${id}&new_password=${encodeURIComponent(newPass)}`
-        });
-        const data = await res.json();
-        if (data.success) {
-            alert(data.message);
-            location.reload();
-        } else {
-            alert(data.error || 'Gagal mengubah password.');
-        }
-    } catch (e) {
-        alert('Terjadi kesalahan koneksi.');
+        var data = await Almusa.post('/api/databases/change-password', { id: id, new_password: newPass });
+        if (data.success) Almusa.reload(data.message || 'Password diperbarui.', 'success');
+        else Almusa.toast(data.error || 'Gagal mengubah password.', 'error');
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
     }
 }
 
 async function backupDb(id, dbName) {
-    if (!confirm(`Buat file backup snapshot untuk database '${dbName}'?`)) return;
+    var ok = await Almusa.confirm({
+        title: 'Backup database',
+        message: "Buat file backup (dump SQL) untuk database '" + dbName + "'?",
+        confirmText: 'Buat backup'
+    });
+    if (!ok) return;
 
-    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     try {
-        const res = await fetch('/api/databases/backup', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRF-TOKEN': csrf
-            },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&id=${id}`
-        });
-        const data = await res.json();
+        var data = await Almusa.post('/api/databases/backup', { id: id });
         if (data.success) {
             openTaskTerminal();
+            Almusa.toast('Backup dijadwalkan.', 'success');
         } else {
-            alert(data.error || 'Gagal menjalankan backup.');
+            Almusa.toast(data.error || 'Gagal menjalankan backup.', 'error');
         }
-    } catch (e) {
-        alert('Terjadi kesalahan koneksi.');
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
     }
 }
 
 async function deleteDb(id, dbName) {
-    if (!confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus database '${dbName}' beserta seluruh datanya?`)) return;
+    var ok = await Almusa.confirm({
+        title: 'Hapus database',
+        message: "Database '" + dbName + "' beserta seluruh datanya akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.",
+        confirmText: 'Hapus database',
+        danger: true
+    });
+    if (!ok) return;
 
-    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     try {
-        const res = await fetch('/api/databases/delete', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRF-TOKEN': csrf
-            },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&id=${id}`
-        });
-        const data = await res.json();
-        if (data.success) {
-            alert(data.message);
-            location.reload();
-        } else {
-            alert(data.error || 'Gagal menghapus database.');
-        }
-    } catch (e) {
-        alert('Terjadi kesalahan koneksi.');
+        var data = await Almusa.post('/api/databases/delete', { id: id });
+        if (data.success) Almusa.reload(data.message || 'Database dihapus.', 'success');
+        else Almusa.toast(data.error || 'Gagal menghapus database.', 'error');
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
     }
 }
 </script>

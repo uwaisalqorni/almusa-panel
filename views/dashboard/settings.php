@@ -2,126 +2,132 @@
 /**
  * Almusa Control Panel - Settings View
  */
+$csrf = \App\Core\Auth::token();
 ?>
 
+<header class="page-header">
+    <div>
+        <h1 class="page-title">Pengaturan</h1>
+        <p class="page-desc">Konfigurasi panel, integrasi Cloudflare, dan keamanan akun administrator.</p>
+    </div>
+</header>
+
 <?php if (!empty($message)): ?>
-    <div class="alert alert-success">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
-        <span><?= htmlspecialchars($message) ?></span>
+    <div class="alert alert-success mb" role="status">
+        <?= ui_icon('check-circle') ?>
+        <span><?= e($message) ?></span>
     </div>
 <?php endif; ?>
 
 <?php if (!empty($error)): ?>
-    <div class="alert alert-danger">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-        <span><?= htmlspecialchars($error) ?></span>
+    <div class="alert alert-danger mb" role="alert">
+        <?= ui_icon('alert-circle') ?>
+        <span><?= e($error) ?></span>
     </div>
 <?php endif; ?>
 
-<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
-    <!-- GENERAL SETTINGS -->
-    <div class="card">
-        <h3 style="font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 20px;">Pengaturan Sistem Panel</h3>
+<div class="grid grid-main" style="align-items:start">
+    <!-- Pengaturan utama -->
+    <form method="POST" action="/settings/save" class="card card-flush" autocomplete="off">
+        <input type="hidden" name="_csrf_token" value="<?= e($csrf) ?>">
 
-        <form method="POST" action="/settings/save">
-            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars(\App\Core\Auth::token()) ?>">
+        <section class="form-section">
+            <h2 class="form-section-title">Umum</h2>
+            <p class="form-section-desc">Identitas dan alamat akses panel.</p>
 
-            <div class="form-group">
-                <label class="form-label">Nama / Judul Panel</label>
-                <input type="text" name="panel_title" class="form-control" value="<?= htmlspecialchars($settings['panel_title']) ?>" required>
+            <div class="field">
+                <label class="label" for="panel_title">Judul panel</label>
+                <input type="text" id="panel_title" name="panel_title" class="input" value="<?= e($settings['panel_title']) ?>" required>
             </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                <div class="form-group">
-                    <label class="form-label">Secret Entrance Path</label>
-                    <div style="display: flex; align-items: center; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-md);">
-                        <span style="padding: 0 12px; color: var(--text-muted); font-size: 13px;">/</span>
-                        <input type="text" name="entrance_path" class="form-control" style="border: none; background: transparent; padding-left: 0;" value="<?= htmlspecialchars($settings['entrance_path']) ?>" required>
+            <div class="field-row">
+                <div class="field">
+                    <label class="label" for="entrance_path">Entrance path</label>
+                    <div class="input-group">
+                        <span class="affix">/</span>
+                        <input type="text" id="entrance_path" name="entrance_path" class="input" value="<?= e($settings['entrance_path']) ?>" required>
                     </div>
-                    <div class="form-help">Token rahasia URL panel untuk memblokir bot scanner.</div>
+                    <div class="help">Jalur rahasia untuk membuka halaman login.</div>
                 </div>
-
-                <div class="form-group">
-                    <label class="form-label">Port Listen Panel</label>
-                    <input type="number" name="panel_port" class="form-control" value="<?= htmlspecialchars($settings['panel_port']) ?>" required>
-                    <div class="form-help">Port TCP khusus (default: 64448).</div>
-                </div>
-            </div>
-
-            <h4 style="font-size: 14px; font-weight: 600; color: #60a5fa; margin: 24px 0 16px;">Integrasi Cloudflare Zero Trust API</h4>
-
-            <div class="form-group">
-                <label class="form-label">Cloudflare API Token</label>
-                <input type="password" name="cf_api_token" class="form-control" value="<?= htmlspecialchars($settings['cf_api_token']) ?>" placeholder="Bearer Token dengan izin Tunnel:Edit & DNS:Edit">
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                <div class="form-group">
-                    <label class="form-label">Cloudflare Account ID</label>
-                    <input type="text" name="cf_account_id" class="form-control" value="<?= htmlspecialchars($settings['cf_account_id']) ?>" placeholder="32-char Account ID">
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">Cloudflare Tunnel ID</label>
-                    <input type="text" name="cf_tunnel_id" class="form-control" value="<?= htmlspecialchars($settings['cf_tunnel_id']) ?>" placeholder="UUID Tunnel">
+                <div class="field">
+                    <label class="label" for="panel_port">Port panel</label>
+                    <input type="number" id="panel_port" name="panel_port" class="input" value="<?= e($settings['panel_port']) ?>" required>
+                    <div class="help">Bawaan: 64448.</div>
                 </div>
             </div>
+        </section>
 
-            <div class="form-group">
-                <label class="form-label">Tunnel Token (Systemd Service)</label>
-                <input type="password" name="cf_tunnel_token" class="form-control" value="<?= htmlspecialchars($settings['cf_tunnel_token']) ?>" placeholder="eyJhIjoi...">
+        <section class="form-section">
+            <h2 class="form-section-title">Cloudflare Zero Trust</h2>
+            <p class="form-section-desc">Dipakai untuk mempublikasikan website ke domain sendiri.</p>
+
+            <div class="field">
+                <label class="label" for="cf_api_token">API token</label>
+                <div class="input-group">
+                    <input type="password" id="cf_api_token" name="cf_api_token" class="input has-reveal" value="<?= e($settings['cf_api_token']) ?>" placeholder="Izin: Account · Cloudflare Tunnel · Edit, Zone · DNS · Edit">
+                    <button type="button" class="icon-btn reveal" data-toggle-password="cf_api_token" aria-label="Tampilkan token"><?= ui_icon('eye') ?></button>
+                </div>
             </div>
-
-            <h4 style="font-size: 14px; font-weight: 600; color: #10b981; margin: 24px 0 16px;">Koneksi Database MySQL Root</h4>
-
-            <div class="form-group">
-                <label class="form-label">MySQL / MariaDB Root Password</label>
-                <input type="password" name="mysql_root_pass" class="form-control" value="<?= htmlspecialchars($settings['mysql_root_pass']) ?>" placeholder="Password root untuk provisioning database">
-                <div class="form-help">Disimpan aman untuk membuat database & user otomatis.</div>
+            <div class="field-row">
+                <div class="field">
+                    <label class="label" for="cf_account_id">Account ID</label>
+                    <input type="text" id="cf_account_id" name="cf_account_id" class="input mono" value="<?= e($settings['cf_account_id']) ?>" placeholder="32 karakter">
+                </div>
+                <div class="field">
+                    <label class="label" for="cf_tunnel_id">Tunnel ID</label>
+                    <input type="text" id="cf_tunnel_id" name="cf_tunnel_id" class="input mono" value="<?= e($settings['cf_tunnel_id']) ?>" placeholder="UUID tunnel">
+                </div>
             </div>
-
-            <button type="submit" class="btn btn-primary" style="margin-top: 10px;">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                    <polyline points="7 3 7 8 15 8"></polyline>
-                </svg>
-                Simpan Pengaturan
-            </button>
-        </form>
-    </div>
-
-    <!-- CHANGE PASSWORD -->
-    <div class="card">
-        <h3 style="font-size: 16px; font-weight: 700; color: #ffffff; margin-bottom: 20px;">Ubah Password Admin</h3>
-
-        <form method="POST" action="/settings/change-password">
-            <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars(\App\Core\Auth::token()) ?>">
-
-            <div class="form-group">
-                <label class="form-label">Password Saat Ini</label>
-                <input type="password" name="current_password" class="form-control" required>
+            <div class="field">
+                <label class="label" for="cf_tunnel_token">Tunnel token <span class="opt">opsional</span></label>
+                <div class="input-group">
+                    <input type="password" id="cf_tunnel_token" name="cf_tunnel_token" class="input has-reveal" value="<?= e($settings['cf_tunnel_token']) ?>" placeholder="eyJhIjoi…">
+                    <button type="button" class="icon-btn reveal" data-toggle-password="cf_tunnel_token" aria-label="Tampilkan token"><?= ui_icon('eye') ?></button>
+                </div>
             </div>
+        </section>
 
-            <div class="form-group">
-                <label class="form-label">Password Baru</label>
-                <input type="password" name="new_password" class="form-control" required minlength="8">
+        <section class="form-section">
+            <h2 class="form-section-title">Database</h2>
+            <p class="form-section-desc">Kredensial root untuk membuat database dan user secara otomatis.</p>
+
+            <div class="field">
+                <label class="label" for="mysql_root_pass">Password root MySQL / MariaDB</label>
+                <div class="input-group">
+                    <input type="password" id="mysql_root_pass" name="mysql_root_pass" class="input has-reveal" value="<?= e($settings['mysql_root_pass']) ?>" placeholder="Password root">
+                    <button type="button" class="icon-btn reveal" data-toggle-password="mysql_root_pass" aria-label="Tampilkan password"><?= ui_icon('eye') ?></button>
+                </div>
             </div>
+        </section>
 
-            <div class="form-group">
-                <label class="form-label">Konfirmasi Password Baru</label>
-                <input type="password" name="confirm_password" class="form-control" required minlength="8">
+        <div class="card-footer">
+            <button type="submit" class="btn btn-primary">Simpan pengaturan</button>
+        </div>
+    </form>
+
+    <!-- Ganti password -->
+    <form method="POST" action="/settings/change-password" class="card card-flush" autocomplete="off">
+        <input type="hidden" name="_csrf_token" value="<?= e($csrf) ?>">
+
+        <section class="form-section">
+            <h2 class="form-section-title">Password administrator</h2>
+            <p class="form-section-desc">Gunakan minimal 8 karakter.</p>
+
+            <div class="field">
+                <label class="label" for="current_password">Password saat ini</label>
+                <input type="password" id="current_password" name="current_password" class="input" autocomplete="current-password" required>
             </div>
+            <div class="field">
+                <label class="label" for="new_password">Password baru</label>
+                <input type="password" id="new_password" name="new_password" class="input" autocomplete="new-password" minlength="8" required>
+            </div>
+            <div class="field">
+                <label class="label" for="confirm_password">Konfirmasi password baru</label>
+                <input type="password" id="confirm_password" name="confirm_password" class="input" autocomplete="new-password" minlength="8" required>
+            </div>
+        </section>
 
-            <button type="submit" class="btn btn-secondary" style="width: 100%;">
-                Perbarui Password
-            </button>
-        </form>
-    </div>
+        <div class="card-footer">
+            <button type="submit" class="btn btn-secondary">Perbarui password</button>
+        </div>
+    </form>
 </div>

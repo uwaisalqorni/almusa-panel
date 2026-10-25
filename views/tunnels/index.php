@@ -4,290 +4,292 @@
  */
 ?>
 
-<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
+<header class="page-header">
     <div>
-        <h2 style="font-size: 20px; font-weight: 700; color: #ffffff;">Cloudflare Tunnel Manager</h2>
-        <p style="font-size: 13px; color: var(--text-muted);">Publikasikan website lokal ke internet secara aman tanpa port forwarding</p>
+        <h1 class="page-title">Cloudflare Tunnel</h1>
+        <p class="page-desc">Publikasikan website lokal ke internet dengan aman, tanpa port forwarding.</p>
     </div>
-    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+    <div class="page-actions">
         <button type="button" class="btn btn-secondary" onclick="openQuickTunnelModal()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-            + 1-Click Quick Tunnel
+            <?= ui_icon('zap') ?> Quick Tunnel
         </button>
         <button type="button" class="btn btn-primary" onclick="openCustomDomainModal()">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
-            </svg>
-            Publikasikan ke Custom Domain (Zero Trust)
+            <?= ui_icon('globe') ?> Domain sendiri
         </button>
     </div>
-</div>
+</header>
 
-<!-- TUNNEL STATUS SUMMARY -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;">
-    <div class="card" style="padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;">
-        <div>
-            <div style="font-weight: 600; color: #ffffff;">Daemon cloudflared Binary</div>
-            <div style="font-size: 12px; color: var(--text-muted);">/usr/local/bin/cloudflared</div>
-        </div>
-        <?php if ($isBinaryInstalled): ?>
-            <span class="badge badge-success">Terpasang</span>
-        <?php else: ?>
-            <span class="badge badge-warning">Belum Ada</span>
-        <?php endif; ?>
-    </div>
-
-    <div class="card" style="padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;">
-        <div>
-            <div style="font-weight: 600; color: #ffffff;">Cloudflare Zero Trust API</div>
-            <div style="font-size: 12px; color: var(--text-muted);">Ingress & DNS Automation</div>
-        </div>
-        <?php if ($isApiReady): ?>
-            <span class="badge badge-success">Terkoneksi</span>
-        <?php else: ?>
-            <a href="/settings" class="badge badge-neutral" style="text-decoration: underline;">Konfigurasi Token</a>
-        <?php endif; ?>
-    </div>
-</div>
-
-<div class="table-container">
-    <div class="table-header">
-        <h3 class="table-title">Daftar Tunnel Aktif</h3>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="openTaskTerminal()">Buka Terminal</button>
-    </div>
-
-    <table class="custom-table">
-        <thead>
-            <tr>
-                <th>Domain Website</th>
-                <th>Tipe Tunnel</th>
-                <th>Public Hostname / URL</th>
-                <th>Layanan Lokal</th>
-                <th>PID</th>
-                <th>Status</th>
-                <th>Aksi</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php if (empty($tunnels)): ?>
-                <tr>
-                    <td colspan="7" style="text-align: center; padding: 48px; color: var(--text-muted);">
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin: 0 auto 12px; display: block; opacity: 0.5;">
-                            <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
-                        </svg>
-                        <p style="margin-bottom: 16px;">Belum ada Cloudflare Tunnel yang berjalan.</p>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="openQuickTunnelModal()">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                            Mulai 1-Click Quick Tunnel Sekarang
-                        </button>
-                    </td>
-                </tr>
+<section class="grid grid-2 mb" aria-label="Status integrasi">
+    <div class="card">
+        <div class="row" style="padding:0;border:0">
+            <span class="icon-tile"><?= ui_icon('terminal') ?></span>
+            <div class="row-main">
+                <h2 class="row-title">Binary cloudflared</h2>
+                <div class="row-sub"><code>/usr/local/bin/cloudflared</code></div>
+            </div>
+            <?php if ($isBinaryInstalled): ?>
+                <span class="badge badge-success">Terpasang</span>
             <?php else: ?>
-                <?php foreach ($tunnels as $tunnel): ?>
+                <a href="/plugins" class="badge badge-warning">Belum ada · Pasang</a>
+            <?php endif; ?>
+        </div>
+    </div>
+    <div class="card">
+        <div class="row" style="padding:0;border:0">
+            <span class="icon-tile"><?= ui_icon('shield') ?></span>
+            <div class="row-main">
+                <h2 class="row-title">Cloudflare Zero Trust API</h2>
+                <div class="row-sub">Ingress &amp; otomasi DNS untuk domain sendiri</div>
+            </div>
+            <?php if ($isApiReady): ?>
+                <span class="badge badge-success">Terhubung</span>
+            <?php else: ?>
+                <a href="/settings" class="badge badge-neutral">Atur token</a>
+            <?php endif; ?>
+        </div>
+    </div>
+</section>
+
+<section class="card card-flush">
+    <div class="card-header">
+        <div>
+            <h2 class="card-title">Tunnel</h2>
+            <p class="card-desc">Daftar tunnel yang terdaftar di panel</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="openTaskTerminal()"><?= ui_icon('terminal') ?> Terminal</button>
+    </div>
+    <div class="card-body">
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
                     <tr>
-                        <td>
-                            <strong style="color: #ffffff; font-size: 14px;"><?= htmlspecialchars($tunnel['domain'] ?? 'N/A') ?></strong>
-                        </td>
-                        <td>
-                            <span class="badge <?= ($tunnel['tunnel_type'] === 'quick' ? 'badge-info' : 'badge-success') ?>">
-                                <?= strtoupper(htmlspecialchars($tunnel['tunnel_type'])) ?>
-                            </span>
-                        </td>
-                        <td>
-                            <a href="<?= htmlspecialchars($tunnel['public_hostname']) ?>" target="_blank" style="color: #38bdf8; font-weight: 500;">
-                                <?= htmlspecialchars($tunnel['public_hostname']) ?> ↗
-                            </a>
-                        </td>
-                        <td><code><?= htmlspecialchars($tunnel['local_service']) ?></code></td>
-                        <td><?= htmlspecialchars($tunnel['pid'] ?? '-') ?></td>
-                        <td>
-                            <span class="badge <?= ($tunnel['status'] === 'running' ? 'badge-success' : 'badge-neutral') ?>">
-                                <?= htmlspecialchars(ucfirst($tunnel['status'])) ?>
-                            </span>
-                        </td>
-                        <td>
-                            <?php if ($tunnel['tunnel_type'] === 'quick'): ?>
-                                <button type="button" class="btn btn-danger btn-sm" onclick="stopQuickTunnel(<?= $tunnel['site_id'] ?>, <?= $tunnel['pid'] ?? 0 ?>)">
-                                    Stop Tunnel
-                                </button>
-                            <?php else: ?>
-                                <span style="font-size: 12px; color: var(--text-muted);">Managed via API</span>
-                            <?php endif; ?>
+                        <th>Website</th>
+                        <th>Tipe</th>
+                        <th>URL publik</th>
+                        <th>Layanan lokal</th>
+                        <th>PID</th>
+                        <th>Status</th>
+                        <th class="th-right">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php if (empty($tunnels)): ?>
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty">
+                                <?= ui_icon('cloud', 'icon-xl') ?>
+                                <div class="empty-title">Belum ada tunnel</div>
+                                <p class="empty-text">Mulai Quick Tunnel untuk mendapatkan URL publik sementara, atau hubungkan domain Anda sendiri.</p>
+                                <button type="button" class="btn btn-primary" onclick="openQuickTunnelModal()"><?= ui_icon('zap') ?> Mulai Quick Tunnel</button>
+                            </div>
                         </td>
                     </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </tbody>
-    </table>
-</div>
-
-<!-- MODAL PUBLISH CUSTOM DOMAIN -->
-<div class="modal-backdrop" id="customDomainModal">
-    <div class="card" style="width: 100%; max-width: 500px; box-shadow: 0 25px 60px rgba(0,0,0,0.8);">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-            <h3 style="font-size: 18px; font-weight: 700; color: #ffffff;">Publikasikan ke Custom Subdomain</h3>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="closeCustomDomainModal()">✕</button>
+                <?php else: foreach ($tunnels as $tunnel):
+                    $host = (string)($tunnel['public_hostname'] ?? '');
+                    $href = preg_match('#^https?://#', $host) ? $host : 'https://' . $host;
+                ?>
+                    <tr>
+                        <td><div class="cell-title"><?= e($tunnel['domain'] ?? 'N/A') ?></div></td>
+                        <td>
+                            <span class="badge <?= $tunnel['tunnel_type'] === 'quick' ? 'badge-info' : 'badge-success' ?> no-dot">
+                                <?= $tunnel['tunnel_type'] === 'quick' ? 'Quick' : 'Custom' ?>
+                            </span>
+                        </td>
+                        <td>
+                            <?php if ($host !== ''): ?>
+                                <a href="<?= e($href) ?>" target="_blank" rel="noopener" class="cell-link">
+                                    <span class="truncate"><?= e(preg_replace('#^https?://#', '', $host)) ?></span>
+                                    <?= ui_icon('external') ?>
+                                </a>
+                            <?php else: ?>
+                                <span class="text-3">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td><code><?= e($tunnel['local_service']) ?></code></td>
+                        <td class="num"><?= e($tunnel['pid'] ?? '—') ?></td>
+                        <td>
+                            <span class="badge <?= $tunnel['status'] === 'running' ? 'badge-success' : 'badge-neutral' ?>">
+                                <?= e($tunnel['status'] === 'running' ? 'Berjalan' : ucfirst((string)$tunnel['status'])) ?>
+                            </span>
+                        </td>
+                        <td>
+                            <div class="cell-actions">
+                                <?php if ($tunnel['tunnel_type'] === 'quick'): ?>
+                                    <button type="button" class="btn btn-secondary btn-sm"
+                                            onclick="stopQuickTunnel(<?= (int)$tunnel['site_id'] ?>, <?= (int)($tunnel['pid'] ?? 0) ?>, this)">
+                                        <?= ui_icon('stop') ?> Hentikan
+                                    </button>
+                                <?php else: ?>
+                                    <span class="text-3" style="font-size:12.5px">Dikelola via API</span>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                    </tr>
+                <?php endforeach; endif; ?>
+                </tbody>
+            </table>
         </div>
+    </div>
+</section>
 
+<!-- Custom domain -->
+<div class="modal-backdrop" id="customDomainModal">
+    <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="customDomainTitle">
+        <div class="modal-header">
+            <div>
+                <h2 class="modal-title" id="customDomainTitle">Publikasikan ke domain sendiri</h2>
+                <p class="modal-subtitle">Rute ingress dan DNS dibuat otomatis lewat Cloudflare API.</p>
+            </div>
+            <button type="button" class="icon-btn" onclick="closeCustomDomainModal()" aria-label="Tutup"><?= ui_icon('x') ?></button>
+        </div>
         <form id="customDomainForm" onsubmit="submitCustomPublish(event)">
-            <div class="form-group">
-                <label class="form-label">Pilih Website Lokal</label>
-                <select id="tunnelSiteId" class="form-control" required>
-                    <?php foreach ($sites as $site): ?>
-                        <option value="<?= $site['id'] ?>"><?= htmlspecialchars($site['domain']) ?></option>
-                    <?php endforeach; ?>
-                </select>
+            <div class="modal-body">
+                <?php if (empty($sites)): ?>
+                    <div class="alert alert-warning">
+                        <?= ui_icon('alert-triangle') ?>
+                        <span>Belum ada website. <a href="/sites">Tambahkan website</a> terlebih dahulu.</span>
+                    </div>
+                <?php else: ?>
+                    <?php if (!$isApiReady): ?>
+                        <div class="alert alert-warning mb">
+                            <?= ui_icon('alert-triangle') ?>
+                            <span>API Cloudflare belum dikonfigurasi. <a href="/settings">Atur token</a> lebih dulu.</span>
+                        </div>
+                    <?php endif; ?>
+                    <div class="field">
+                        <label class="label" for="tunnelSiteId">Website</label>
+                        <select id="tunnelSiteId" class="select" required>
+                            <?php foreach ($sites as $site): ?>
+                                <option value="<?= (int)$site['id'] ?>"><?= e($site['domain']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="tunnelCustomHost">Hostname publik</label>
+                        <input type="text" id="tunnelCustomHost" class="input" placeholder="app.domainanda.com" required>
+                        <div class="help">Domain harus dikelola di akun Cloudflare yang terhubung.</div>
+                    </div>
+                <?php endif; ?>
             </div>
-
-            <div class="form-group">
-                <label class="form-label">Target Custom Hostname (Cloudflare DNS)</label>
-                <input type="text" id="tunnelCustomHost" class="form-control" placeholder="api.proyek-saya.id" required>
-                <div class="form-help">Domain harus dikelola di akun Cloudflare yang terhubung.</div>
-            </div>
-
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+            <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeCustomDomainModal()">Batal</button>
-                <button type="submit" class="btn btn-primary">Publikasikan via API</button>
+                <button type="submit" class="btn btn-primary" id="customPublishSubmit" <?= empty($sites) ? 'disabled' : '' ?>>Publikasikan</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- MODAL QUICK TUNNEL -->
+<!-- Quick tunnel -->
 <div class="modal-backdrop" id="quickTunnelModal">
-    <div class="card" style="width: 100%; max-width: 500px; box-shadow: 0 25px 60px rgba(0,0,0,0.8);">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-            <h3 style="font-size: 18px; font-weight: 700; color: #ffffff;">Jalankan 1-Click Quick Tunnel</h3>
-            <button type="button" class="btn btn-secondary btn-sm" onclick="closeQuickTunnelModal()">✕</button>
-        </div>
-
-        <form id="quickTunnelForm" onsubmit="submitQuickStart(event)">
-            <div class="form-group">
-                <label class="form-label">Pilih Website</label>
-                <select id="quickSiteSelect" class="form-control" required>
-                    <?php foreach ($sites as $site): ?>
-                        <option value="<?= $site['id'] ?>" data-domain="<?= htmlspecialchars($site['domain']) ?>">
-                            <?= htmlspecialchars($site['domain']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <div class="form-help">Cloudflare akan membuatkan URL publik (*.trycloudflare.com) tanpa perlu registrasi domain.</div>
+    <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="quickTunnelTitle">
+        <div class="modal-header">
+            <div>
+                <h2 class="modal-title" id="quickTunnelTitle">Jalankan Quick Tunnel</h2>
+                <p class="modal-subtitle">URL publik sementara (*.trycloudflare.com), tanpa registrasi domain.</p>
             </div>
-
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+            <button type="button" class="icon-btn" onclick="closeQuickTunnelModal()" aria-label="Tutup"><?= ui_icon('x') ?></button>
+        </div>
+        <form id="quickTunnelForm" onsubmit="submitQuickStart(event)">
+            <div class="modal-body">
+                <?php if (empty($sites)): ?>
+                    <div class="alert alert-warning">
+                        <?= ui_icon('alert-triangle') ?>
+                        <span>Belum ada website. <a href="/sites">Tambahkan website</a> terlebih dahulu.</span>
+                    </div>
+                <?php else: ?>
+                    <div class="field">
+                        <label class="label" for="quickSiteSelect">Website</label>
+                        <select id="quickSiteSelect" class="select" required>
+                            <?php foreach ($sites as $site): ?>
+                                <option value="<?= (int)$site['id'] ?>" data-domain="<?= e($site['domain']) ?>"><?= e($site['domain']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="help">URL akan berubah setiap kali tunnel dimulai ulang.</div>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeQuickTunnelModal()">Batal</button>
-                <button type="submit" class="btn btn-primary">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                    Jalankan Tunnel
-                </button>
+                <button type="submit" class="btn btn-primary" id="quickStartSubmit" <?= empty($sites) ? 'disabled' : '' ?>>Jalankan tunnel</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-function openQuickTunnelModal() {
-    document.getElementById('quickTunnelModal').classList.add('show');
-}
-
-function closeQuickTunnelModal() {
-    document.getElementById('quickTunnelModal').classList.remove('show');
-}
+function openQuickTunnelModal()   { Almusa.openModal('quickTunnelModal'); }
+function closeQuickTunnelModal()  { Almusa.closeModal('quickTunnelModal'); }
+function openCustomDomainModal()  { Almusa.openModal('customDomainModal'); setTimeout(function () { var i = document.getElementById('tunnelCustomHost'); if (i) i.focus(); }, 50); }
+function closeCustomDomainModal() { Almusa.closeModal('customDomainModal'); }
 
 async function submitQuickStart(e) {
     e.preventDefault();
-    const sel = document.getElementById('quickSiteSelect');
-    if (!sel || !sel.value) {
-        alert('Pilih website terlebih dahulu.');
-        return;
-    }
-    const siteId = sel.value;
-    const domain = sel.options[sel.selectedIndex].getAttribute('data-domain');
-    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    var sel = document.getElementById('quickSiteSelect');
+    if (!sel || !sel.value) { Almusa.toast('Pilih website terlebih dahulu.', 'error'); return; }
 
+    var restore = Almusa.busy(document.getElementById('quickStartSubmit'), 'Memulai…');
     try {
-        const res = await fetch('/api/tunnels/quick-start', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRF-TOKEN': csrf
-            },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&site_id=${siteId}&domain=${encodeURIComponent(domain)}`
+        var data = await Almusa.post('/api/tunnels/quick-start', {
+            site_id: sel.value,
+            domain: sel.options[sel.selectedIndex].getAttribute('data-domain')
         });
-        const data = await res.json();
         if (data.success) {
             closeQuickTunnelModal();
             openTaskTerminal();
-            setTimeout(() => location.reload(), 4000);
+            Almusa.reload('Tunnel sedang dibuat…', 'info', 4000);
         } else {
-            alert(data.error || 'Gagal memulai tunnel.');
+            Almusa.toast(data.error || 'Gagal memulai tunnel.', 'error');
+            restore();
         }
     } catch (err) {
-        alert('Terjadi kesalahan koneksi.');
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+        restore();
     }
 }
 
-function openCustomDomainModal() {
-    document.getElementById('customDomainModal').classList.add('show');
-}
+async function stopQuickTunnel(siteId, pid, btn) {
+    var ok = await Almusa.confirm({
+        title: 'Hentikan tunnel',
+        message: 'URL publik untuk website ini akan berhenti dapat diakses.',
+        confirmText: 'Hentikan',
+        danger: true
+    });
+    if (!ok) return;
 
-function closeCustomDomainModal() {
-    document.getElementById('customDomainModal').classList.remove('show');
-}
-
-async function stopQuickTunnel(siteId, pid) {
-    if (!confirm('Hentikan Quick Tunnel untuk website ini?')) return;
-
-    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    var restore = btn ? Almusa.busy(btn, 'Menghentikan…') : function () {};
     try {
-        const res = await fetch('/api/tunnels/quick-stop', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRF-TOKEN': csrf
-            },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&site_id=${siteId}&pid=${pid}`
-        });
-        const data = await res.json();
+        var data = await Almusa.post('/api/tunnels/quick-stop', { site_id: siteId, pid: pid });
         if (data.success) {
             openTaskTerminal();
-            setTimeout(() => location.reload(), 1500);
+            Almusa.reload('Tunnel dihentikan.', 'success', 1500);
         } else {
-            alert(data.error || 'Gagal menghentikan tunnel.');
+            Almusa.toast(data.error || 'Gagal menghentikan tunnel.', 'error');
+            restore();
         }
-    } catch (e) {
-        alert('Terjadi kesalahan koneksi.');
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+        restore();
     }
 }
 
 async function submitCustomPublish(e) {
     e.preventDefault();
-    const site_id = document.getElementById('tunnelSiteId').value;
-    const custom_hostname = document.getElementById('tunnelCustomHost').value.trim();
-    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-
+    var restore = Almusa.busy(document.getElementById('customPublishSubmit'), 'Memublikasikan…');
     try {
-        const res = await fetch('/api/tunnels/custom-publish', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRF-TOKEN': csrf
-            },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&site_id=${site_id}&custom_hostname=${encodeURIComponent(custom_hostname)}`
+        var data = await Almusa.post('/api/tunnels/custom-publish', {
+            site_id: document.getElementById('tunnelSiteId').value,
+            custom_hostname: document.getElementById('tunnelCustomHost').value.trim()
         });
-
-        const data = await res.json();
         if (data.success) {
-            alert(data.message);
             closeCustomDomainModal();
-            location.reload();
+            Almusa.reload(data.message || 'Domain berhasil dipublikasikan.', 'success');
         } else {
-            alert(data.error || 'Gagal mempublikasikan domain.');
+            Almusa.toast(data.error || 'Gagal mempublikasikan domain.', 'error', 8000);
+            restore();
         }
     } catch (err) {
-        alert('Terjadi kesalahan koneksi.');
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+        restore();
     }
 }
 </script>
