@@ -1,0 +1,181 @@
+# Rencana Implementasi & Roadmap Produksi — Almusa Control Panel
+
+Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*), dan kriteria pengujian untuk membawa **Almusa Control Panel (SLEMP Edition)** menjadi panel server yang stabil, aman, dan siap pakai di lingkungan *production*.
+
+---
+
+## Ringkasan Fase Pengerjaan
+
+| Fase | Fokus Utama | Estimasi Kompleksitas | Status |
+| :--- | :--- | :---: | :---: |
+| **Fase 1** | Hardening Fondasi & Keamanan Arsitektur | Tinggi (Kritis) | ⏳ Siap Dikerjakan |
+| **Fase 2** | Fitur Esensial Pengelolaan Hosting | Menengah | 📋 Terjadwal |
+| **Fase 3** | Otomasi Backup, Cron & Disaster Recovery | Menengah | 📋 Terjadwal |
+| **Fase 4** | Monitoring, Health Watchdog & Notifikasi | Rendah-Menengah | 📋 Terjadwal |
+
+---
+
+## 🛡️ Fase 1: Hardening Fondasi & Keamanan (Production Core)
+
+> **Tujuan:** Menghilangkan kelemahan arsitektur kritis (`php -S` dan eksekusi web sebagai `root`), membatasi brute-force, dan memastikan performa tinggi saat diakses bersamaan.
+
+### Langkah 1.1: Migrasi Web Server Panel ke Nginx + PHP-FPM Khusus
+- [ ] **Latar Belakang:** `php -S` bersifat *single-threaded*, tidak tahan beban konkuren, dan tidak memiliki perlindungan HTTP modern.
+- [ ] **Tugas:**
+  - Buat pool PHP-FPM tersendiri untuk panel di `/etc/php/8.3/fpm/pool.d/almusa-panel.conf` yang mendengarkan di Unix Socket: `/run/almusa/panel.sock`.
+  - Buat konfigurasi vhost Nginx internal di `/etc/nginx/sites-available/almusa-panel.conf` yang mendengarkan di port `64448` (SSL via Cloudflare Tunnel atau lokal).
+  - Arahkan rute statis `/assets/*` dilayani langsung oleh Nginx (efisiensi caching & zero overhead PHP).
+  - Perbarui `mypanel-web.service` agar mengelola pool panel tersebut atau cukup memastikan socket aktif.
+- [ ] **Verifikasi:**
+  - Request bersamaan (stress test 20 concurrent connections) tidak membuat panel hang atau freeze.
+
+### Langkah 1.2: Pemisahan Hak Akses (Drop Root dari Web Layer)
+- [ ] **Latar Belakang:** Web server panel saat ini berjalan sebagai `User=root`. Kerentanan pada web app langsung berpotensi mengorbankan seluruh OS.
+- [ ] **Tugas:**
+  - Ubah user eksekusi file web panel menjadi `www-data` atau user sistem khusus `almusa`.
+  - Ubah izin kepemilikan folder data: `chown -R www-data:www-data /home/afandi/almusa-panel/data`.
+  - Pastikan hanya daemon worker background (`mypanel-worker.service` yang menjalankan `task.php`) yang tetap memiliki hak eskalasi root melalui whitelist perintah aman.
+- [ ] **Verifikasi:**
+  - `ps aux | grep php` menunjukkan proses web berjalan sebagai `www-data`, sedangkan `task.php` berjalan sebagai `root`.
+
+### Langkah 1.3: Rate Limiting & Proteksi Brute-Force Login
+- [ ] **Tugas:**
+  - Buat tabel `login_attempts` di `data/panel.db` (kolom: `ip_address`, `attempts`, `last_attempt_at`, `locked_until`).
+  - Tambahkan middleware di `App\Controllers\AuthController`:
+    - Batasi maksimal 5x percobaan gagal per IP dalam rentang waktu 15 menit.
+    - Kunci form login selama 15 menit jika batas terlampaui.
+  - Tambahkan pesan error yang jelas dan log kejadian ke `data/panel_security.log`.
+- [ ] **Verifikasi:**
+  - Uji POST ke `/login` 6x dengan password salah; percobaan ke-6 harus ditolak dengan HTTP 429 / pesan terkunci.
+
+### Langkah 1.4: Real IP Forwarding dari Cloudflare
+- [ ] **Tugas:**
+  - Tambahkan konfigurasi Nginx `set_real_ip_from` untuk daftar CIDR IP Cloudflare resmi (IPv4 & IPv6).
+  - Set `real_ip_header CF-Connecting-IP;` agar log akses dan pembatasan IP mendeteksi IP asli pengguna, bukan IP edge Cloudflare.
+- [ ] **Verifikasi:**
+  - Buka `/dashboard` melalui `https://panel.bidanokta.xyz`, periksa IP yang tercatat di session/audit log.
+
+---
+
+## 🧰 Fase 2: Fitur Esensial Pengelolaan Hosting
+
+> **Tujuan:** Mempermudah deployment dan pemeliharaan website tanpa harus login SSH ke terminal manual.
+
+### Langkah 2.1: Web File Manager & Config Editor
+- [ ] **Tugas:**
+  - Tambahkan sub-menu atau modal "File Manager" pada baris website di `/sites`.
+  - Tampilkan struktur file di `/www/wwwroot/{domain}` dengan navigasi folder ringan.
+  - Fitur inti:
+    - **Editor Teks**: Mengedit file `.env`, `nginx.conf`, `index.php`, `.htaccess`.
+    - **Upload & Extract**: Unggah file zip dan ekstrak langsung di folder tujuan.
+    - **File Permissions**: Set kepemilikan otomatis `chown -R www-data:www-data` setelah extract.
+- [ ] **Verifikasi:**
+  - Buat file `.env` baru pada salah satu website dan simpan; verifikasi file tersimpan dengan benar di server.
+
+### Langkah 2.2: Database Web GUI (Embedded Adminer)
+- [ ] **Tugas:**
+  - Pasang file `adminer.php` di direktori terisolasi (`/www/panel/public/adminer/index.php`).
+  - Tambahkan autentikasi auto-login sekali klik (*single-sign-on token*) dari menu `/databases`.
+  - Lindungi rute Adminer agar hanya bisa diakses saat session admin panel aktif.
+- [ ] **Verifikasi:**
+  - Klik tombol "Kelola Data" pada salah satu database, jendela Adminer langsung terbuka ke database bersangkutan tanpa meminta password ulang.
+
+### Langkah 2.3: Let's Encrypt / Certbot 1-Click SSL
+- [ ] **Tugas:**
+  - Buat endpoint API `/api/sites/issue-ssl` (`site_id`, `provider=letsencrypt`).
+  - Tambahkan skrip task worker untuk menjalankan Certbot:
+    ```bash
+    certbot certonly --webroot -w /www/wwwroot/{domain} -d {domain} --non-interactive --agree-tos -m admin@{domain}
+    ```
+  - Otomatis injeksi blok konfigurasi SSL port 443 pada template Nginx virtual host.
+  - Daftarkan timer systemd untuk auto-renewal (`certbot renew`).
+- [ ] **Verifikasi:**
+  - Domain dengan A-record langsung dapat menerbitkan sertifikat SSL yang valid dan redirect otomatis HTTP -> HTTPS.
+
+### Langkah 2.4: Log Viewer Realtime per Website
+- [ ] **Tugas:**
+  - Tambahkan modal "Lihat Log" pada setiap website di menu `/sites`.
+  - Menampilkan 50 baris terakhir dari:
+    - `/var/log/nginx/{domain}_access.log`
+    - `/var/log/nginx/{domain}_error.log`
+  - Tombol auto-refresh dan tombol bersihkan log.
+- [ ] **Verifikasi:**
+  - Munculkan error 404/500 buatan pada website target, log langsung terbaca di modal panel.
+
+---
+
+## 💾 Fase 3: Otomasi Backup, Cron & Disaster Recovery
+
+> **Tujuan:** Menjamin keandalan data website dan memfasilitasi tugas otomatis framework modern (seperti Laravel & WordPress).
+
+### Langkah 3.1: Cron Job GUI Manager
+- [ ] **Tugas:**
+  - Buat menu navigasi baru: **Cron Jobs** (`/cron`).
+  - Tabel daftar cron yang aktif di sistem (`/etc/cron.d/almusa-cron` atau crontab `www-data`).
+  - Form tambah tugas:
+    - Pilihan interval visual (Setiap menit, Setiap jam, Setiap hari jam 00:00, atau Custom Cron Expression).
+    - Perintah shell (misal: `/usr/bin/php8.3 /www/wwwroot/app/artisan schedule:run`).
+  - Tombol eksekusi manual untuk menguji script.
+- [ ] **Verifikasi:**
+  - Jadwalkan script echo ke file temporary; verifikasi file terbuat sesuai jadwal cron.
+
+### Langkah 3.2: Automated Database & Site Backup Engine
+- [ ] **Tugas:**
+  - Tambahkan menu **Backups** (`/backups`).
+  - Pembuatan snapshot terkompresi:
+    - Database dump (`mysqldump -u root -p {db_name} | gzip`).
+    - File direktori website (`tar -czf site_backup_{date}.tar.gz`).
+  - Opsi penyimpanan:
+    - Lokal: `/www/backup/` (dengan retensi rotasi otomatis, misal: simpan 7 hari terakhir).
+    - Remote Cloud: Dukungan Cloudflare R2 / AWS S3 via AWS CLI atau S3 PHP SDK sederhana.
+- [ ] **Verifikasi:**
+  - Jalankan backup terjadwal; file snapshot terarsip rapi dengan nama berbasis timestamp.
+
+### Langkah 3.3: 1-Click Site & Database Restore
+- [ ] **Tugas:**
+  - Tampilkan tombol "Restore" di sebelah setiap file backup yang tersimpan.
+  - Worker membaca file `.sql.gz` atau `.tar.gz` dan mengembalikan state data.
+  - Dialog konfirmasi bahaya sebelum eksekusi (*safety guard*).
+- [ ] **Verifikasi:**
+  - Hapus salah satu tabel uji coba, lakukan restore dari backup; tabel kembali normal.
+
+---
+
+## 📈 Fase 4: Monitoring, Health Watchdog & Notifikasi
+
+> **Tujuan:** Server dapat memulihkan diri sendiri (*self-healing*) dan memberi kabar darurat jika ada kendala.
+
+### Langkah 4.1: Service Watchdog & Auto-Heal Daemon
+- [ ] **Tugas:**
+  - Buat skrip cron / systemd timer watchdog (`watchdog.php` berjalan setiap 1 menit):
+    - Cek status `systemctl is-active nginx`.
+    - Cek status `systemctl is-active mariadb`.
+    - Cek status `systemctl is-active php8.3-fpm` & versi lain.
+    - Cek status `cloudflared`.
+  - Jika salah satu service mati mendadak (*failed/inactive*), watchdog langsung mengeksekusi `systemctl restart {service}` dan mencatat log kejadian ke `data/panel_incident.log`.
+- [ ] **Verifikasi:**
+  - Matikan manual Nginx via terminal (`sudo systemctl stop nginx`); dalam 1-2 menit service harus menyala kembali secara otomatis.
+
+### Langkah 4.2: Notifikasi Insiden (Telegram / Discord Webhook)
+- [ ] **Tugas:**
+  - Tambahkan seksi pengaturan di `/settings`: **Notifikasi Darurat**.
+  - Opsi: Telegram Bot Token & Chat ID, atau Discord Webhook URL.
+  - Trigger notifikasi:
+    - Service mengalami restart otomatis oleh Watchdog.
+    - Penggunaan disk storage `/` melebihi ambang batas 85%.
+    - Terjadi 5x percobaan login gagal beruntun (indikasi brute-force).
+- [ ] **Verifikasi:**
+  - Klik tombol "Kirim Notifikasi Uji Coba" di menu pengaturan; pesan uji coba masuk ke grup Telegram/Discord.
+
+---
+
+## 🏁 Checklist Kesiapan Go-Live (Production Gate)
+
+Sebelum server dipublikasikan untuk klien/pengguna luas:
+- [ ] `php -S` sudah diganti dengan Nginx + PHP-FPM pool socket.
+- [ ] User web layer bukan `root`.
+- [ ] Port panel (64448) dilindungi firewall (UFW) atau hanya diakses via Cloudflare Zero Trust Access.
+- [ ] Default password admin sudah diganti dengan password kuat (min. 12 karakter acak).
+- [ ] Secret Entrance Path unik sudah diaktifkan (misal: `/panel-aman-2026`).
+- [ ] Backup otomatis database berjalan minimal 1x sehari.
+- [ ] Seluruh repository kode di-push dan tersinkronisasi bersih di branch `main`.
