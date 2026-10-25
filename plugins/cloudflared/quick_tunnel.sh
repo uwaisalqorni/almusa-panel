@@ -40,7 +40,7 @@ case "$ACTION" in
         rm -f "$LOG_FILE"
 
         # Spawn tunnel background process
-        nohup cloudflared tunnel --url http://127.0.0.1:80 --http-host-header="${DOMAIN}" > "$LOG_FILE" 2>&1 &
+        nohup cloudflared tunnel --url http://127.0.0.1:8088 --http-host-header="${DOMAIN}" > "$LOG_FILE" 2>&1 &
         TUNNEL_PID=$!
         echo "[INFO] Tunnel daemon spawned with PID: $TUNNEL_PID. Awaiting URL generation..."
 
@@ -77,7 +77,7 @@ case "$ACTION" in
         // Insert new tunnel record
         \$ins = \$pdo->prepare('
             INSERT INTO tunnels (site_id, tunnel_type, public_hostname, local_service, pid, status)
-            VALUES (:sid, \"quick\", :url, \"http://127.0.0.1:80\", :pid, \"running\")
+            VALUES (:sid, \"quick\", :url, \"http://127.0.0.1:8088\", :pid, \"running\")
         ');
         \$ins->execute([
             ':sid' => ${SITE_ID},

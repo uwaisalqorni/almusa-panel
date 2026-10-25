@@ -120,7 +120,7 @@ class TunnelController
             }
 
             // 2. Add Ingress Rule
-            $cfApi->addPublicHostname($hostname, 'http://127.0.0.1:80');
+            $cfApi->addPublicHostname($hostname, 'http://127.0.0.1:8088');
 
             // 3. Upsert CNAME
             $cnameTarget = "{$tunnelId}.cfargotunnel.com";
@@ -133,7 +133,7 @@ class TunnelController
 
             $ins = $pdo->prepare("
                 INSERT INTO tunnels (site_id, tunnel_type, public_hostname, local_service, status)
-                VALUES (:sid, 'custom', :host, 'http://127.0.0.1:80', 'running')
+                VALUES (:sid, 'custom', :host, 'http://127.0.0.1:8088', 'running')
             ");
             $ins->execute([
                 ':sid'  => $siteId,
