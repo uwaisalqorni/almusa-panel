@@ -167,9 +167,11 @@ function buildSanitizedCommand(string $action, array $payload): ?string
 
         case 'vhost_delete':
             $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $docroot = preg_replace('/[^a-zA-Z0-9_\.\/\-]/', '', (string)($payload['docroot'] ?? ''));
+            $deleteFiles = !empty($payload['delete_files']) ? '1' : '0';
             $script = "{$root}/scripts/vhost_manager.sh";
             if (!file_exists($script)) return null;
-            return "bash " . escapeshellarg($script) . " delete " . escapeshellarg($domain);
+            return "bash " . escapeshellarg($script) . " delete " . escapeshellarg($domain) . " " . escapeshellarg($docroot) . " " . escapeshellarg($deleteFiles);
 
         case 'vhost_switch_php':
             $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));

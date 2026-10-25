@@ -144,6 +144,7 @@ class SiteController
     public function delete(): void
     {
         $siteId = (int)($_POST['site_id'] ?? 0);
+        $deleteFiles = !empty($_POST['delete_files']);
 
         $pdo = Database::getInstance();
         $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
@@ -155,8 +156,25 @@ class SiteController
         }
 
         $domain = $site['domain'];
+        $docroot = $site['docroot'] ?? '';
 
-        // Delete from DB
+        // Kill active quick tunnels if running
+        try {
+            $tunnelStmt = $pdo->prepare("SELECT pid FROM tunnels WHERE site_id = :id");
+            $tunnelStmt->execute([':id' => $siteId]);
+            $pids = $tunnelStmt->fetchAll(\PDO::FETCH_COLUMN);
+            foreach ($pids as $p) {
+                if ($p && (int)$p > 0) {
+                    @exec("kill -15 " . (int)$p . " 2>/dev/null || kill -9 " . (int)$p . " 2>/dev/null");
+                }
+            }
+            $delTunnel = $pdo->prepare("DELETE FROM tunnels WHERE site_id = :id");
+            $delTunnel->execute([':id' => $siteId]);
+        } catch (\Throwable $te) {
+            // Non-blocking tunnel cleanup
+        }
+
+        // Delete site record from DB
         $del = $pdo->prepare("DELETE FROM sites WHERE id = :id");
         $del->execute([':id' => $siteId]);
 
@@ -166,13 +184,17 @@ class SiteController
             VALUES (:title, 'vhost_delete', :payload, 'pending')
         ");
         $task->execute([
-            ':title'   => "Hapus Virtual Host: {$domain}",
-            ':payload' => json_encode(['domain' => $domain]),
+            ':title'   => "Hapus Virtual Host: {$domain}" . ($deleteFiles ? " (beserta file)" : ""),
+            ':payload' => json_encode([
+                'domain'       => $domain,
+                'docroot'      => $docroot,
+                'delete_files' => $deleteFiles ? 1 : 0,
+            ]),
         ]);
 
         Response::json([
             'success' => true,
-            'message' => "Virtual Host {$domain} berhasil dihapus.",
+            'message' => "Virtual Host {$domain} berhasil dihapus" . ($deleteFiles ? " beserta file dokumen" : "") . ".",
         ]);
     }
 }

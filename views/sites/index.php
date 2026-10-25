@@ -86,7 +86,7 @@
                         </td>
                         <td>
                             <div style="display: flex; gap: 6px;">
-                                <button type="button" class="btn btn-danger btn-sm" onclick="deleteSite(<?= $site['id'] ?>, '<?= htmlspecialchars($site['domain']) ?>')">
+                                <button type="button" class="btn btn-danger btn-sm" onclick="openDeleteSiteModal(<?= $site['id'] ?>, '<?= htmlspecialchars($site['domain']) ?>', '<?= htmlspecialchars($site['docroot']) ?>')">
                                     Hapus
                                 </button>
                             </div>
@@ -144,6 +144,33 @@
                 <button type="submit" class="btn btn-primary">Simpan & Buat Virtual Host</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- MODAL DELETE WEBSITE -->
+<div class="modal-backdrop" id="deleteSiteModal">
+    <div class="card" style="width: 100%; max-width: 480px; box-shadow: 0 25px 60px rgba(0,0,0,0.8);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+            <h3 style="font-size: 18px; font-weight: 700; color: #ef4444;">Hapus Virtual Host Website</h3>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeDeleteSiteModal()">✕</button>
+        </div>
+
+        <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5;">
+            Apakah Anda yakin ingin menghapus website <strong id="delDomainText" style="color: #ffffff;"></strong>? Konfigurasi Nginx dan Virtual Host akan dicabut.
+        </p>
+
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 20px;">
+            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; color: #f87171; font-size: 13px; font-weight: 600;">
+                <input type="checkbox" id="delFilesCheck" value="1" checked style="width: 18px; height: 18px; cursor: pointer;">
+                <span>Hapus juga folder dan seluruh file proyek di direktori:</span>
+            </label>
+            <div id="delDocrootText" style="margin-top: 6px; font-family: monospace; font-size: 12px; color: #ffffff; padding-left: 28px; word-break: break-all;"></div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="btn btn-secondary" onclick="closeDeleteSiteModal()">Batal</button>
+            <button type="button" class="btn btn-danger" id="confirmDeleteBtn" onclick="confirmDeleteSite()">Hapus Sekarang</button>
+        </div>
     </div>
 </div>
 
@@ -215,8 +242,31 @@ async function switchSitePhp(siteId, newVersion) {
     }
 }
 
-async function deleteSite(siteId, domain) {
-    if (!confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus Virtual Host untuk ${domain}?`)) return;
+let currentDeleteSiteId = null;
+let currentDeleteDomain = null;
+
+function openDeleteSiteModal(siteId, domain, docroot) {
+    currentDeleteSiteId = siteId;
+    currentDeleteDomain = domain;
+    document.getElementById('delDomainText').innerText = domain;
+    document.getElementById('delDocrootText').innerText = docroot || `/www/wwwroot/${domain}`;
+    document.getElementById('delFilesCheck').checked = true;
+    document.getElementById('deleteSiteModal').classList.add('show');
+}
+
+function closeDeleteSiteModal() {
+    document.getElementById('deleteSiteModal').classList.remove('show');
+    currentDeleteSiteId = null;
+    currentDeleteDomain = null;
+}
+
+async function confirmDeleteSite() {
+    if (!currentDeleteSiteId) return;
+
+    const deleteFiles = document.getElementById('delFilesCheck').checked ? 1 : 0;
+    const btn = document.getElementById('confirmDeleteBtn');
+    btn.disabled = true;
+    btn.innerText = 'Menghapus...';
 
     const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     try {
@@ -226,18 +276,28 @@ async function deleteSite(siteId, domain) {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'X-CSRF-TOKEN': csrf
             },
-            body: `_csrf_token=${encodeURIComponent(csrf)}&site_id=${siteId}`
+            body: `_csrf_token=${encodeURIComponent(csrf)}&site_id=${currentDeleteSiteId}&delete_files=${deleteFiles}`
         });
         const data = await res.json();
         if (data.success) {
+            closeDeleteSiteModal();
             openTaskTerminal();
             setTimeout(() => location.reload(), 1500);
         } else {
             alert(data.error || 'Gagal menghapus website.');
+            btn.disabled = false;
+            btn.innerText = 'Hapus Sekarang';
         }
     } catch (e) {
         alert('Terjadi kesalahan jaringan.');
+        btn.disabled = false;
+        btn.innerText = 'Hapus Sekarang';
     }
+}
+
+// Fallback direct delete
+async function deleteSite(siteId, domain) {
+    openDeleteSiteModal(siteId, domain, `/www/wwwroot/${domain}`);
 }
 
 async function startQuickTunnel(siteId, domain) {

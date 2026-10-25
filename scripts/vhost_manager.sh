@@ -130,8 +130,27 @@ EOF
         ;;
 
     delete)
+        DELETE_FILES="${4:-0}"
         echo "[INFO] Deleting Virtual Host for $DOMAIN..."
         rm -f "$LINK_FILE" "$CONF_FILE"
+
+        if [ "$DELETE_FILES" = "1" ] && [ -n "$DOCROOT" ] && [ -d "$DOCROOT" ]; then
+            case "$DOCROOT" in
+                /|/root|/home|/www|/www/wwwroot|/etc|/var|/usr|/bin|/sbin)
+                    echo "[WARNING] Refusing to delete protected system path: $DOCROOT"
+                    ;;
+                /www/wwwroot/*)
+                    echo "[INFO] Removing website directory: $DOCROOT..."
+                    rm -rf "$DOCROOT"
+                    ;;
+                *)
+                    echo "[WARNING] Docroot outside /www/wwwroot, not deleted for safety: $DOCROOT"
+                    ;;
+            esac
+        fi
+
+        # Remove logs
+        rm -f "/var/log/nginx/${DOMAIN}_access.log" "/var/log/nginx/${DOMAIN}_error.log"
 
         if command -v nginx >/dev/null 2>&1; then
             echo "[INFO] Testing Nginx configuration..."
