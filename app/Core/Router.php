@@ -37,6 +37,9 @@ class Router
 
         $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
         $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+        if ($method === 'HEAD') {
+            $method = 'GET';
+        }
         $normalized = '/' . trim($uri, '/');
         if ($normalized !== '/') {
             $normalized = rtrim($normalized, '/');
