@@ -1,0 +1,181 @@
+<?php
+/**
+ * Almusa Server Control Panel - Background Task Daemon
+ * 
+ * Runs as root under systemd (mypanel-worker.service)
+ * Polls SQLite tasks table and safely executes whitelisted system scripts.
+ */
+
+if (php_sapi_name() !== 'cli') {
+    die("This daemon script can only be run from the CLI.\n");
+}
+
+define('PANEL_ROOT', __DIR__);
+require_once PANEL_ROOT . '/app/bootstrap.php';
+
+use App\Core\Database;
+
+$logFile = '/tmp/panelExec.log';
+$running = true;
+
+// Signal handlers for graceful shutdown
+if (function_exists('pcntl_signal')) {
+    pcntl_async_signals(true);
+    pcntl_signal(SIGTERM, function () use (&$running) {
+        $running = false;
+    });
+    pcntl_signal(SIGINT, function () use (&$running) {
+        $running = false;
+    });
+}
+
+echo "[" . date('Y-m-d H:i:s') . "] Almusa Task Daemon initialized. Polling task queue...\n";
+
+while ($running) {
+    try {
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM tasks WHERE status = 'pending' ORDER BY id ASC LIMIT 1");
+        $stmt->execute();
+        $task = $stmt->fetch();
+
+        if ($task) {
+            $taskId = (int)$task['id'];
+            $action = (string)$task['action'];
+            $title  = (string)$task['title'];
+            $payload = json_decode($task['payload'] ?? '{}', true) ?: [];
+
+            echo "[" . date('Y-m-d H:i:s') . "] Processing Task #{$taskId}: {$title} [Action: {$action}]\n";
+
+            // Mark as processing
+            $update = $pdo->prepare("UPDATE tasks SET status = 'processing', started_at = CURRENT_TIMESTAMP WHERE id = :id");
+            $update->execute([':id' => $taskId]);
+
+            // Append start banner to log file
+            $startBanner = "\n======================================================\n";
+            $startBanner .= "[TASK #{$taskId}] {$title}\n";
+            $startBanner .= "Action: {$action} | Started: " . date('Y-m-d H:i:s') . "\n";
+            $startBanner .= "======================================================\n";
+            @file_put_contents($logFile, $startBanner, FILE_APPEND);
+
+            $command = buildSanitizedCommand($action, $payload);
+            $exitCode = 1;
+
+            if ($command === null) {
+                $err = "[ERROR] Unrecognized or disallowed task action: '{$action}'. Skipped.\n";
+                @file_put_contents($logFile, $err, FILE_APPEND);
+            } else {
+                // Execute command and stream output directly into /tmp/panelExec.log
+                $fullCmd = "{$command} >> " . escapeshellarg($logFile) . " 2>&1";
+                @file_put_contents($logFile, "[EXEC] {$command}\n\n", FILE_APPEND);
+                
+                system($fullCmd, $exitCode);
+            }
+
+            $endBanner = "\n------------------------------------------------------\n";
+            $endBanner .= "Finished: " . date('Y-m-d H:i:s') . " | Exit Code: {$exitCode}\n";
+            $endBanner .= "------------------------------------------------------\n";
+            @file_put_contents($logFile, $endBanner, FILE_APPEND);
+
+            // Update task status in database
+            $status = ($exitCode === 0) ? 'completed' : 'failed';
+            $finalUpdate = $pdo->prepare("
+                UPDATE tasks 
+                SET status = :status, exit_code = :code, finished_at = CURRENT_TIMESTAMP 
+                WHERE id = :id
+            ");
+            $finalUpdate->execute([
+                ':status' => $status,
+                ':code'   => $exitCode,
+                ':id'     => $taskId,
+            ]);
+
+            echo "[" . date('Y-m-d H:i:s') . "] Task #{$taskId} {$status} (Exit Code: {$exitCode})\n";
+        }
+    } catch (\Throwable $e) {
+        $msg = "[" . date('Y-m-d H:i:s') . "] Daemon Exception: " . $e->getMessage() . "\n";
+        echo $msg;
+        @file_put_contents($logFile, $msg, FILE_APPEND);
+    }
+
+    sleep(1);
+}
+
+echo "[" . date('Y-m-d H:i:s') . "] Almusa Task Daemon stopped gracefully.\n";
+
+/**
+ * Validates and maps task action to hardened shell commands
+ */
+function buildSanitizedCommand(string $action, array $payload): ?string
+{
+    $root = PANEL_ROOT;
+
+    switch ($action) {
+        case 'plugin_install':
+            $plugin = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['plugin'] ?? ''));
+            $version = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', (string)($payload['version'] ?? ''));
+            $script = "{$root}/plugins/{$plugin}/install.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " install " . escapeshellarg($version);
+
+        case 'plugin_uninstall':
+            $plugin = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['plugin'] ?? ''));
+            $version = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', (string)($payload['version'] ?? ''));
+            $script = "{$root}/plugins/{$plugin}/install.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " uninstall " . escapeshellarg($version);
+
+        case 'php_ext_install':
+            $ver = preg_replace('/[^0-9\.]/', '', (string)($payload['version'] ?? ''));
+            $ext = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['extension'] ?? ''));
+            $subAction = ($payload['sub_action'] ?? 'install') === 'uninstall' ? 'uninstall' : 'install';
+            $script = "{$root}/plugins/php/ext.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " " . escapeshellarg($subAction) . " " . escapeshellarg($ver) . " " . escapeshellarg($ext);
+
+        case 'vhost_create':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $docroot = preg_replace('/[^a-zA-Z0-9_\.\/\-]/', '', (string)($payload['docroot'] ?? ''));
+            $phpVer = preg_replace('/[^0-9\.]/', '', (string)($payload['php_version'] ?? '8.3'));
+            $rewrite = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['rewrite'] ?? 'default'));
+            $script = "{$root}/scripts/vhost_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " create " . escapeshellarg($domain) . " " . escapeshellarg($docroot) . " " . escapeshellarg($phpVer) . " " . escapeshellarg($rewrite);
+
+        case 'vhost_delete':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $script = "{$root}/scripts/vhost_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " delete " . escapeshellarg($domain);
+
+        case 'vhost_switch_php':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $phpVer = preg_replace('/[^0-9\.]/', '', (string)($payload['php_version'] ?? '8.3'));
+            $script = "{$root}/scripts/vhost_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " switch_php " . escapeshellarg($domain) . " " . escapeshellarg($phpVer);
+
+        case 'tunnel_quick_start':
+            $siteId = (int)($payload['site_id'] ?? 0);
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $script = "{$root}/plugins/cloudflared/quick_tunnel.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " start " . escapeshellarg((string)$siteId) . " " . escapeshellarg($domain);
+
+        case 'tunnel_quick_stop':
+            $siteId = (int)($payload['site_id'] ?? 0);
+            $pid = (int)($payload['pid'] ?? 0);
+            $script = "{$root}/plugins/cloudflared/quick_tunnel.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " stop " . escapeshellarg((string)$siteId) . " " . escapeshellarg((string)$pid);
+
+        case 'service_reload':
+            $service = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', (string)($payload['service'] ?? ''));
+            if (!in_array($service, ['nginx', 'mysql', 'mariadb', 'cloudflared']) && !str_starts_with($service, 'php')) {
+                return null;
+            }
+            return "systemctl reload " . escapeshellarg($service);
+
+        default:
+            return null;
+    }
+}

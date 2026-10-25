@@ -1,0 +1,31 @@
+# Sensitive & Private Planning Files
+passroot-saya.md
+plan.md
+
+# Runtime Panel Database & Generated Credentials
+data/panel.db
+data/panel.db-shm
+data/panel.db-wal
+data/entrance.txt
+data/initial_credentials.txt
+data/*.log
+
+# Logs & Temporary Files
+*.log
+/tmp/panelExec.log
+/tmp/cf_quick_*.log
+
+# Backups and SQL Dumps
+*.sql
+*.sql.gz
+*.tar.gz
+backup/*
+!backup/.gitkeep
+
+# IDE and OS artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

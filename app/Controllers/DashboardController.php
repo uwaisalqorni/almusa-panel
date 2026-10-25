@@ -1,0 +1,166 @@
+<?php
+
+namespace App\Controllers;
+
+use App\Core\Auth;
+use App\Core\Database;
+use App\Core\Response;
+use App\Core\SystemMonitor;
+
+class DashboardController
+{
+    public function index(): void
+    {
+        $pdo = Database::getInstance();
+
+        $sitesCount = (int)$pdo->query("SELECT COUNT(*) FROM sites")->fetchColumn();
+        $dbCount = (int)$pdo->query("SELECT COUNT(*) FROM databases")->fetchColumn();
+        $tunnelCount = (int)$pdo->query("SELECT COUNT(*) FROM tunnels WHERE status = 'running'")->fetchColumn();
+        $taskPending = (int)$pdo->query("SELECT COUNT(*) FROM tasks WHERE status = 'pending'")->fetchColumn();
+
+        $recentSites = $pdo->query("SELECT * FROM sites ORDER BY id DESC LIMIT 5")->fetchAll();
+        $recentTasks = $pdo->query("SELECT * FROM tasks ORDER BY id DESC LIMIT 5")->fetchAll();
+
+        $stats = SystemMonitor::getStats();
+
+        // Check common services
+        $services = [
+            'nginx'       => SystemMonitor::isServiceActive('nginx'),
+            'mysql'       => SystemMonitor::isServiceActive('mysql') || SystemMonitor::isServiceActive('mariadb'),
+            'cloudflared' => SystemMonitor::isServiceActive('cloudflared'),
+        ];
+
+        // Check PHP-FPM versions installed
+        $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+        $phpStatus = [];
+        foreach ($phpVersions as $ver) {
+            $sock = "/run/php/php{$ver}-fpm.sock";
+            $isActive = file_exists($sock) || SystemMonitor::isServiceActive("php{$ver}-fpm");
+            $phpStatus[$ver] = $isActive;
+        }
+
+        Response::view('dashboard/index', [
+            'title'       => 'Dashboard',
+            'user'        => Auth::user(),
+            'sitesCount'  => $sitesCount,
+            'dbCount'     => $dbCount,
+            'tunnelCount' => $tunnelCount,
+            'taskPending' => $taskPending,
+            'recentSites' => $recentSites,
+            'recentTasks' => $recentTasks,
+            'stats'       => $stats,
+            'services'    => $services,
+            'phpStatus'   => $phpStatus,
+        ]);
+    }
+
+    public function stats(): void
+    {
+        $stats = SystemMonitor::getStats();
+        Response::json([
+            'success' => true,
+            'data'    => $stats,
+        ]);
+    }
+
+    public function settings(): void
+    {
+        $settings = [
+            'panel_title'     => Database::getSetting('panel_title', 'Almusa Server Panel'),
+            'entrance_path'   => Database::getSetting('entrance_path', 'almusa'),
+            'panel_port'      => Database::getSetting('panel_port', '64448'),
+            'cf_api_token'    => Database::getSetting('cf_api_token', ''),
+            'cf_account_id'   => Database::getSetting('cf_account_id', ''),
+            'cf_tunnel_id'    => Database::getSetting('cf_tunnel_id', ''),
+            'cf_tunnel_token' => Database::getSetting('cf_tunnel_token', ''),
+            'mysql_root_pass' => Database::getSetting('mysql_root_pass', ''),
+        ];
+
+        Response::view('dashboard/settings', [
+            'title'    => 'Pengaturan Panel',
+            'user'     => Auth::user(),
+            'settings' => $settings,
+            'message'  => $_SESSION['settings_msg'] ?? null,
+            'error'    => $_SESSION['settings_err'] ?? null,
+        ]);
+        unset($_SESSION['settings_msg'], $_SESSION['settings_err']);
+    }
+
+    public function saveSettings(): void
+    {
+        $title = trim($_POST['panel_title'] ?? 'Almusa Server Panel');
+        $entrance = trim($_POST['entrance_path'] ?? '');
+        $port = trim($_POST['panel_port'] ?? '64448');
+        $cfToken = trim($_POST['cf_api_token'] ?? '');
+        $cfAccount = trim($_POST['cf_account_id'] ?? '');
+        $cfTunnelId = trim($_POST['cf_tunnel_id'] ?? '');
+        $cfTunnelToken = trim($_POST['cf_tunnel_token'] ?? '');
+        $mysqlPass = trim($_POST['mysql_root_pass'] ?? '');
+
+        // Validation
+        if (!preg_match('/^[a-zA-Z0-9_\-]{4,32}$/', $entrance)) {
+            $_SESSION['settings_err'] = 'Path entrance harus 4-32 karakter alfanumerik (huruf, angka, _, -).';
+            Response::redirect('/settings');
+        }
+
+        $portNum = (int)$port;
+        if ($portNum < 1024 || $portNum > 65535) {
+            $_SESSION['settings_err'] = 'Port harus antara 1024 sampai 65535.';
+            Response::redirect('/settings');
+        }
+
+        Database::setSetting('panel_title', $title);
+        Database::setSetting('entrance_path', $entrance);
+        Database::setSetting('panel_port', (string)$portNum);
+        Database::setSetting('cf_api_token', $cfToken);
+        Database::setSetting('cf_account_id', $cfAccount);
+        Database::setSetting('cf_tunnel_id', $cfTunnelId);
+        Database::setSetting('cf_tunnel_token', $cfTunnelToken);
+        if ($mysqlPass !== '') {
+            Database::setSetting('mysql_root_pass', $mysqlPass);
+        }
+
+        // Update entrance.txt file
+        $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
+        @file_put_contents($root . '/data/entrance.txt', $entrance);
+        @chmod($root . '/data/entrance.txt', 0600);
+
+        $_SESSION['settings_msg'] = 'Pengaturan berhasil disimpan. Jika port atau entrance diubah, sesuaikan URL akses Anda.';
+        Response::redirect('/settings');
+    }
+
+    public function changePassword(): void
+    {
+        $currentPass = (string)($_POST['current_password'] ?? '');
+        $newPass = (string)($_POST['new_password'] ?? '');
+        $confirmPass = (string)($_POST['confirm_password'] ?? '');
+
+        if (strlen($newPass) < 8) {
+            $_SESSION['settings_err'] = 'Password baru minimal 8 karakter.';
+            Response::redirect('/settings');
+        }
+
+        if ($newPass !== $confirmPass) {
+            $_SESSION['settings_err'] = 'Konfirmasi password baru tidak cocok.';
+            Response::redirect('/settings');
+        }
+
+        $userId = Auth::id();
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT password_hash FROM users WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $userId]);
+        $hash = $stmt->fetchColumn();
+
+        if (!$hash || !password_verify($currentPass, $hash)) {
+            $_SESSION['settings_err'] = 'Password saat ini salah.';
+            Response::redirect('/settings');
+        }
+
+        $newHash = password_hash($newPass, PASSWORD_BCRYPT, ['cost' => 12]);
+        $update = $pdo->prepare("UPDATE users SET password_hash = :hash WHERE id = :id");
+        $update->execute([':hash' => $newHash, ':id' => $userId]);
+
+        $_SESSION['settings_msg'] = 'Password berhasil diperbarui!';
+        Response::redirect('/settings');
+    }
+}

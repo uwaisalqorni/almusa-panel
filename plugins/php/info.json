@@ -1,0 +1,17 @@
+{
+  "name": "php",
+  "title": "PHP Multi-Version Manager",
+  "type": "runtime",
+  "supported_versions": ["7.4", "8.0", "8.1", "8.2", "8.3", "8.4"],
+  "author": "Almusa / Ondrej PPA",
+  "description": "Multi-version PHP-FPM execution manager with isolated Unix sockets and 1-click extension manager.",
+  "extensions": [
+    {"name": "redis", "description": "High-performance in-memory key-value store driver"},
+    {"name": "imagick", "description": "ImageMagick library wrapper for image processing"},
+    {"name": "memcached", "description": "Distributed memory caching system extension"},
+    {"name": "xdebug", "description": "Powerful step debugger and profiler for PHP"},
+    {"name": "soap", "description": "SOAP protocol client and server support"},
+    {"name": "intl", "description": "Internationalization extension (ICU)"},
+    {"name": "zip", "description": "Zip archive read and write support"}
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "cloudflared",
+  "title": "Cloudflare Tunnel (Argo)",
+  "type": "network",
+  "version": "latest",
+  "author": "Almusa / Cloudflare Inc",
+  "description": "Secure Zero Trust tunneling daemon allowing instant HTTPS publishing for local sites without opening firewall ports.",
+  "service": "cloudflared"
+}

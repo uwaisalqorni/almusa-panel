@@ -1,0 +1,10 @@
+{
+  "name": "mysql",
+  "title": "MySQL & MariaDB Database",
+  "type": "database",
+  "version": "10.11 / 8.0",
+  "author": "Almusa / MariaDB Foundation",
+  "description": "Standard relational database management system with UTF8MB4 Unicode CI enforcement and automated user grants.",
+  "service": "mariadb",
+  "default_port": 3306
+}

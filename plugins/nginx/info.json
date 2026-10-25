@@ -1,0 +1,10 @@
+{
+  "name": "nginx",
+  "title": "Nginx Web Server",
+  "type": "webserver",
+  "version": "1.24.x",
+  "author": "Almusa / Nginx Inc",
+  "description": "High-performance HTTP server and reverse proxy with HTTP/2 and modern SSL support.",
+  "service": "nginx",
+  "installed": false
+}
