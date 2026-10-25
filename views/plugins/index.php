@@ -64,15 +64,17 @@ $services = [
 <section class="grid grid-cards mb" aria-label="Layanan inti">
     <?php foreach ($services as $s): ?>
         <article class="card">
-            <div class="row" style="padding:0;border:0">
-                <span class="icon-tile"><?= ui_icon($s['icon']) ?></span>
-                <div class="row-main">
-                    <h2 class="row-title"><?= e($s['name']) ?></h2>
-                    <div class="row-sub"><?= e($s['tag']) ?></div>
+            <div>
+                <div class="row" style="padding:0;border:0">
+                    <span class="icon-tile"><?= ui_icon($s['icon']) ?></span>
+                    <div class="row-main">
+                        <h2 class="row-title"><?= e($s['name']) ?></h2>
+                        <div class="row-sub"><?= e($s['tag']) ?></div>
+                    </div>
+                    <?= $s['badge'] ?>
                 </div>
-                <?= $s['badge'] ?>
+                <p class="text-2" style="font-size:13px;margin:14px 0 16px"><?= e($s['desc']) ?></p>
             </div>
-            <p class="text-2" style="font-size:13px;margin:14px 0 16px"><?= e($s['desc']) ?></p>
             <div class="cell-actions" style="justify-content:flex-start">
                 <?php if (!$s['installed']): ?>
                     <button type="button" class="btn btn-primary btn-sm" onclick="queuePluginAction('install', '<?= e($s['key']) ?>', '')">

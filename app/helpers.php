@@ -34,3 +34,18 @@ if (!function_exists('js_arg')) {
         return e(json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 }
+
+if (!function_exists('asset_url')) {
+    /**
+     * Menghasilkan URL aset statis dengan cache-busting timestamp otomatis.
+     * Mencegah caching usang di Cloudflare CDN dan browser.
+     */
+    function asset_url(string $path): string
+    {
+        $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__);
+        $file = $root . '/public' . $path;
+        $ver = file_exists($file) ? (string)filemtime($file) : '2.1.0';
+        return $path . '?v=' . $ver;
+    }
+}
+

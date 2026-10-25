@@ -353,7 +353,7 @@ code {
 }
 .user-name { font-size: 13px; font-weight: 500; }
 
-.content { flex: 1; width: 100%; max-width: 1320px; margin: 0 auto; padding: 28px 32px 48px; }
+.content { flex: 1; width: 100%; max-width: none; margin: 0; padding: 24px 28px 48px; }
 
 .scrim { display: none; }
 
@@ -369,7 +369,7 @@ code {
     margin-bottom: 22px;
 }
 .page-title { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.25; }
-.page-desc { margin-top: 4px; font-size: 13.5px; color: var(--text-3); max-width: 62ch; }
+.page-desc { margin-top: 4px; font-size: 13.5px; color: var(--text-3); }
 .page-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* --------------------------------------------------------------------------
@@ -378,8 +378,15 @@ code {
 .grid { display: grid; gap: 16px; }
 .grid-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; }
 .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.grid-main { grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); align-items: start; }
-.grid-cards { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.grid-main { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); align-items: start; }
+.grid-cards { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.grid-cards .card {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.card-pad { padding: 20px; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .mb { margin-bottom: 16px; }
 

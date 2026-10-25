@@ -66,7 +66,13 @@ class Router
                     'txt'  => 'text/plain; charset=utf-8',
                 ];
                 header('Content-Type: ' . ($mimes[$ext] ?? 'application/octet-stream'));
-                header('Cache-Control: public, max-age=86400');
+                if (!empty($_GET['v'])) {
+                    header('Cache-Control: public, max-age=31536000, immutable');
+                } else {
+                    header('Cache-Control: no-cache, no-store, must-revalidate');
+                    header('Pragma: no-cache');
+                    header('Expires: 0');
+                }
                 readfile($filePath);
                 exit;
             }

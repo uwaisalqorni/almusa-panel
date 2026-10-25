@@ -20,7 +20,7 @@
 </header>
 
 <section class="grid grid-2 mb" aria-label="Status integrasi">
-    <div class="card">
+    <div class="card card-pad">
         <div class="row" style="padding:0;border:0">
             <span class="icon-tile"><?= ui_icon('terminal') ?></span>
             <div class="row-main">
@@ -34,7 +34,7 @@
             <?php endif; ?>
         </div>
     </div>
-    <div class="card">
+    <div class="card card-pad">
         <div class="row" style="padding:0;border:0">
             <span class="icon-tile"><?= ui_icon('shield') ?></span>
             <div class="row-main">

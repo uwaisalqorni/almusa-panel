@@ -7,11 +7,11 @@
     <title>Masuk · <?= e($title ?? 'Almusa Server Panel') ?></title>
     <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
     <link rel="alternate icon" href="/favicon.ico">
-    <script src="/assets/js/theme.js"></script>
+    <script src="<?= asset_url('/assets/js/theme.js') ?>"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/assets/css/panel.css">
+    <link rel="stylesheet" href="<?= asset_url('/assets/css/panel.css') ?>">
 </head>
 <body>
 <?php require __DIR__ . '/../layouts/_icons.php'; ?>
@@ -66,6 +66,6 @@
     </div>
 </main>
 
-<script src="/assets/js/panel.js"></script>
+<script src="<?= asset_url('/assets/js/panel.js') ?>"></script>
 </body>
 </html>
