@@ -14,10 +14,51 @@ if ! [[ "$VERSION" =~ ^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4)$ ]]; then
     exit 1
 fi
 
+ensure_php_repo() {
+    # Check if target PHP version packages are already resolvable
+    if apt-cache show "php${VERSION}-fpm" >/dev/null 2>&1 && apt-cache show "php${VERSION}-common" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "[INFO] PHP ${VERSION} packages not available in current sources. Configuring Sury PHP repository..."
+
+    DISTRO_ID="ubuntu"
+    CODENAME=""
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO_ID="${ID:-ubuntu}"
+        CODENAME="${VERSION_CODENAME:-}"
+    fi
+
+    if [ -z "$CODENAME" ]; then
+        CODENAME="$(lsb_release -sc 2>/dev/null || echo 'noble')"
+    fi
+
+    DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates lsb-release apt-transport-https gnupg
+
+    mkdir -p /usr/share/keyrings
+    if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
+        echo "[INFO] Downloading Sury archive keyring..."
+        curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg || true
+    fi
+
+    echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
+
+    if [ "$DISTRO_ID" = "ubuntu" ] && [ "$CODENAME" = "focal" ]; then
+        add-apt-repository -y ppa:ondrej/php || true
+    fi
+
+    echo "[INFO] Updating apt package indices..."
+    apt-get update -y
+}
+
 case "$ACTION" in
     install)
+        echo "[INFO] Ensuring PHP repository is available..."
+        ensure_php_repo
+
         echo "[INFO] Installing PHP $VERSION and core extensions..."
-        apt-get update -y
         DEBIAN_FRONTEND=noninteractive apt-get install -y \
             "php${VERSION}-fpm" \
             "php${VERSION}-cli" \

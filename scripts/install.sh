@@ -51,15 +51,24 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     lsb-release \
     apt-transport-https
 
-# Add ondrej/php repo on Ubuntu for multi-version PHP support (only on focal, jammy, noble)
-CODENAME="${VERSION_CODENAME:-}"
-if [ "$OS" = "ubuntu" ] && [[ "$CODENAME" =~ ^(focal|jammy|noble)$ ]]; then
-    echo -e "${BLUE}[*] Mendaftarkan PPA ondrej/php untuk Ubuntu ${CODENAME}...${NC}"
-    add-apt-repository -y ppa:ondrej/php || true
-    apt-get update -y || rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php-*
-else
-    echo -e "${BLUE}[*] Menggunakan paket dependensi PHP resmi distro ${OS} (${CODENAME:-generic})...${NC}"
+# Register multi-version PHP repository (Ondrej Sury - supports Debian & Ubuntu)
+echo -e "${BLUE}[*] Mendaftarkan repositori multi-versi PHP (Ondrej Sury)...${NC}"
+mkdir -p /usr/share/keyrings
+if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
+    curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg || true
 fi
+
+CODENAME="${VERSION_CODENAME:-}"
+if [ -z "$CODENAME" ]; then
+    CODENAME="$(lsb_release -sc 2>/dev/null || echo 'noble')"
+fi
+
+echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
+
+if [ "$OS" = "ubuntu" ] && [[ "$CODENAME" =~ ^(focal|jammy|noble)$ ]]; then
+    add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+fi
+apt-get update -y || true
 
 # Ensure standalone PHP CLI and sqlite extensions are installed
 DEBIAN_FRONTEND=noninteractive apt-get install -y \

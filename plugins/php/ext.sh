@@ -25,10 +25,30 @@ case "$EXTENSION" in
         ;;
 esac
 
+ensure_php_repo() {
+    if apt-cache show "php${VERSION}-${EXTENSION}" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    CODENAME="${VERSION_CODENAME:-}"
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        CODENAME="${VERSION_CODENAME:-}"
+    fi
+    [ -z "$CODENAME" ] && CODENAME="noble"
+
+    mkdir -p /usr/share/keyrings
+    if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
+        curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg || true
+    fi
+    echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
+    apt-get update -y
+}
+
 case "$ACTION" in
     install)
+        ensure_php_repo
         echo "[INFO] Installing php${VERSION}-${EXTENSION}..."
-        apt-get update -y
         DEBIAN_FRONTEND=noninteractive apt-get install -y "php${VERSION}-${EXTENSION}"
         systemctl restart "php${VERSION}-fpm"
         echo "[SUCCESS] php${VERSION}-${EXTENSION} installed and PHP-FPM restarted!"
