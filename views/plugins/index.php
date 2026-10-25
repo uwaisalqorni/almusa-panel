@@ -88,7 +88,10 @@
                     Install Native MariaDB
                 </button>
             <?php else: ?>
-                <a href="/databases" class="btn btn-secondary btn-sm">Buka Database Manager</a>
+                <a href="/databases" class="btn btn-secondary btn-sm">Buka Database</a>
+                <button class="btn btn-danger btn-sm" onclick="queuePluginAction('uninstall', 'mysql', '')">
+                    Uninstall
+                </button>
             <?php endif; ?>
         </div>
     </div>
@@ -121,6 +124,9 @@
                 </button>
             <?php else: ?>
                 <a href="/tunnels" class="btn btn-secondary btn-sm">Kelola Tunnels</a>
+                <button class="btn btn-danger btn-sm" onclick="queuePluginAction('uninstall', 'cloudflared', '')">
+                    Uninstall
+                </button>
             <?php endif; ?>
         </div>
     </div>
