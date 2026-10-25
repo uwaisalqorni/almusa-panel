@@ -107,8 +107,17 @@ require_once '/www/panel/app/bootstrap.php';
 \App\Core\Database::autoMigrate();
 "
 
-# 6. Create Systemd Service Units
-echo -e "${BLUE}[5/7] Mendaftarkan systemd service: mypanel-web & mypanel-worker...${NC}"
+# 6. Configure Nginx Virtual Host and Dedicated PHP-FPM for Panel
+echo -e "${BLUE}[5/7] Menyiapkan Nginx & Dedicated PHP-FPM untuk Almusa Panel...${NC}"
+
+# Pastikan nginx terpasang
+if ! command -v nginx >/dev/null 2>&1; then
+    echo -e "${BLUE}[*] Memasang Nginx...${NC}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nginx || true
+fi
+
+# Tentukan binary PHP-FPM yang tersedia (misal php-fpm8.3 atau default php-fpm)
+PHP_FPM_BIN=$(command -v php-fpm8.3 || command -v php-fpm || echo "/usr/sbin/php-fpm8.3")
 
 PORT=$(php -r "
 define('PANEL_ROOT', '/www/panel');
@@ -116,16 +125,81 @@ require_once '/www/panel/app/bootstrap.php';
 echo \App\Core\Database::getSetting('panel_port', '64448');
 ")
 
+# Pastikan direktori config ada
+mkdir -p /www/panel/config /run/php
+
+# Tulis konfigurasi Nginx untuk panel jika belum ada
+cat << EOF > /www/panel/config/nginx-panel.conf
+server {
+    listen ${PORT} default_server;
+    listen [::]:${PORT} default_server;
+    server_name _;
+
+    root /www/panel/public;
+    index index.php index.html;
+
+    charset utf-8;
+    server_tokens off;
+
+    access_log /var/log/nginx/almusa_access.log;
+    error_log /var/log/nginx/almusa_error.log warn;
+
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    client_max_body_size 50M;
+
+    location ~* \.(jpg|jpeg|gif|png|webp|svg|ico|css|js|woff|woff2|ttf|eot)$ {
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, no-transform";
+        try_files \$uri =404;
+    }
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:/run/php/almusa-panel.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+        fastcgi_read_timeout 300;
+        fastcgi_intercept_errors off;
+    }
+
+    location ~ /\.(?!well-known) {
+        deny all;
+    }
+
+    location ^~ /data/ {
+        deny all;
+    }
+}
+EOF
+
+# Link ke sites Nginx
+mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+ln -sf /www/panel/config/nginx-panel.conf /etc/nginx/sites-available/almusa-panel.conf
+ln -sf /etc/nginx/sites-available/almusa-panel.conf /etc/nginx/sites-enabled/almusa-panel.conf
+
+# Daftarkan dedicated PHP-FPM service untuk panel
 cat << EOF > /etc/systemd/system/mypanel-web.service
 [Unit]
-Description=Almusa Server Control Panel (Web Interface)
+Description=Almusa Server Control Panel (Dedicated PHP-FPM Service)
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/www/panel
-ExecStart=/usr/bin/php -S 0.0.0.0:${PORT} -t /www/panel/public /www/panel/public/index.php
+ExecStart=${PHP_FPM_BIN} -F -y /www/panel/config/panel-fpm.conf
+ExecReload=/bin/kill -USR2 \$MAINPID
 Restart=always
 RestartSec=3
 
@@ -155,6 +229,7 @@ systemctl enable mypanel-web.service
 systemctl restart mypanel-web.service
 systemctl enable mypanel-worker.service
 systemctl restart mypanel-worker.service
+nginx -t && systemctl reload nginx || systemctl restart nginx
 
 # 7. Symlink global command 'mypanel'
 echo -e "${BLUE}[6/7] Membuat symlink CLI /usr/local/bin/mypanel...${NC}"

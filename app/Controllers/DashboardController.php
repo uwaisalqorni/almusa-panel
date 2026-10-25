@@ -109,6 +109,7 @@ class DashboardController
             Response::redirect('/settings');
         }
 
+        $oldPort = Database::getSetting('panel_port', '64448');
         Database::setSetting('panel_title', $title);
         Database::setSetting('entrance_path', $entrance);
         Database::setSetting('panel_port', (string)$portNum);
@@ -120,8 +121,29 @@ class DashboardController
             Database::setSetting('mysql_root_pass', $mysqlPass);
         }
 
-        // Update entrance.txt file
+        // Update port Nginx jika port diubah
         $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
+        if ((string)$portNum !== (string)$oldPort) {
+            $nginxConf = $root . '/config/nginx-panel.conf';
+            if (file_exists($nginxConf)) {
+                $conf = file_get_contents($nginxConf);
+                $conf = preg_replace('/listen\s+\d+\s+default_server;/', "listen {$portNum} default_server;", $conf);
+                $conf = preg_replace('/listen\s+\[::\]:\d+\s+default_server;/', "listen [::]:{$portNum} default_server;", $conf);
+                @file_put_contents($nginxConf, $conf);
+
+                // Antrekan reload Nginx
+                $taskStmt = $pdo->prepare("
+                    INSERT INTO tasks (title, action, payload, status)
+                    VALUES (:title, 'service_reload', :payload, 'pending')
+                ");
+                $taskStmt->execute([
+                    ':title'   => "Reload Nginx untuk menerapkan port panel {$portNum}",
+                    ':payload' => json_encode(['service' => 'nginx']),
+                ]);
+            }
+        }
+
+        // Update entrance.txt file
         @file_put_contents($root . '/data/entrance.txt', $entrance);
         @chmod($root . '/data/entrance.txt', 0600);
 
