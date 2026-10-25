@@ -99,10 +99,16 @@ class DatabaseController
 
             // 2. Create user (DDL does not allow prepared placeholders, quote password safely)
             $quotedPass = $mysql->quote($dbPass);
-            $mysql->exec("CREATE USER IF NOT EXISTS '{$dbUser}'@'{$accessHost}' IDENTIFIED BY {$quotedPass};");
+            $hosts = [$accessHost];
+            if (in_array($accessHost, ['127.0.0.1', 'localhost'])) {
+                $hosts = ['localhost', '127.0.0.1'];
+            }
 
-            // 3. Grant privileges
-            $mysql->exec("GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$dbUser}'@'{$accessHost}';");
+            // 3. Grant privileges for each host
+            foreach ($hosts as $h) {
+                $mysql->exec("CREATE USER IF NOT EXISTS '{$dbUser}'@'{$h}' IDENTIFIED BY {$quotedPass};");
+                $mysql->exec("GRANT ALL PRIVILEGES ON `{$dbName}`.* TO '{$dbUser}'@'{$h}';");
+            }
             $mysql->exec("FLUSH PRIVILEGES;");
 
             // 4. Save metadata into panel SQLite
@@ -156,7 +162,14 @@ class DatabaseController
             }
 
             $quotedPass = $mysql->quote($newPass);
-            $mysql->exec("ALTER USER '{$user}'@'{$host}' IDENTIFIED BY {$quotedPass};");
+            $hosts = [$host];
+            if (in_array($host, ['127.0.0.1', 'localhost'])) {
+                $hosts = ['localhost', '127.0.0.1'];
+            }
+
+            foreach ($hosts as $h) {
+                $mysql->exec("ALTER USER IF EXISTS '{$user}'@'{$h}' IDENTIFIED BY {$quotedPass};");
+            }
             $mysql->exec("FLUSH PRIVILEGES;");
 
             $update = $pdoSqlite->prepare("UPDATE databases SET db_password_enc = :pass WHERE id = :id");
@@ -194,8 +207,16 @@ class DatabaseController
             if (preg_match('/^[a-zA-Z0-9_]{1,64}$/', $dbName)) {
                 $mysql->exec("DROP DATABASE IF EXISTS `{$dbName}`;");
             }
-            if (preg_match('/^[a-zA-Z0-9_]{1,64}$/', $dbUser) && preg_match('/^[a-zA-Z0-9_.%-]{1,64}$/', $host)) {
-                $mysql->exec("DROP USER IF EXISTS '{$dbUser}'@'{$host}';");
+
+            $hosts = [$host];
+            if (in_array($host, ['127.0.0.1', 'localhost'])) {
+                $hosts = ['localhost', '127.0.0.1'];
+            }
+
+            if (preg_match('/^[a-zA-Z0-9_]{1,64}$/', $dbUser)) {
+                foreach ($hosts as $h) {
+                    $mysql->exec("DROP USER IF EXISTS '{$dbUser}'@'{$h}';");
+                }
             }
 
             $mysql->exec("FLUSH PRIVILEGES;");
