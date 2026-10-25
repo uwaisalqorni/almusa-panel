@@ -26,6 +26,21 @@ spl_autoload_register(function ($class) {
 
     if (file_exists($file)) {
         require_once $file;
+        return;
+    }
+
+    // Support App\Plugins\<Plugin>\<Class> located in plugins/<plugin>/<Class>.php
+    if (str_starts_with($relativeClass, 'Plugins\\')) {
+        $parts = explode('\\', $relativeClass);
+        if (count($parts) >= 3) {
+            $pluginDir = strtolower($parts[1]);
+            $subPath = implode('/', array_slice($parts, 2));
+            $pluginFile = PANEL_ROOT . '/plugins/' . $pluginDir . '/' . $subPath . '.php';
+            if (file_exists($pluginFile)) {
+                require_once $pluginFile;
+                return;
+            }
+        }
     }
 });
 

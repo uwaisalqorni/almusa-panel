@@ -13,6 +13,8 @@ $user = Auth::user();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(Auth::token()) ?>">
     <title><?= htmlspecialchars($title ?? 'Dashboard') ?> - <?= htmlspecialchars($panelTitle) ?></title>
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <link rel="alternate icon" href="/favicon.ico">
     <link rel="stylesheet" href="/assets/css/panel.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

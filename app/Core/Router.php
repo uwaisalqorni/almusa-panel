@@ -46,7 +46,7 @@ class Router
         }
 
         // 1. Static asset bypass (for built-in php server or direct access)
-        if (str_starts_with($normalized, '/assets/')) {
+        if (str_starts_with($normalized, '/assets/') || $normalized === '/favicon.ico' || $normalized === '/robots.txt') {
             $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
             $filePath = $root . '/public' . $normalized;
             if (file_exists($filePath) && is_file($filePath)) {
@@ -59,9 +59,11 @@ class Router
                     'jpg'  => 'image/jpeg',
                     'jpeg' => 'image/jpeg',
                     'webp' => 'image/webp',
+                    'ico'  => 'image/x-icon',
                     'woff' => 'font/woff',
                     'woff2'=> 'font/woff2',
                     'ttf'  => 'font/ttf',
+                    'txt'  => 'text/plain; charset=utf-8',
                 ];
                 header('Content-Type: ' . ($mimes[$ext] ?? 'application/octet-stream'));
                 header('Cache-Control: public, max-age=86400');

@@ -4,17 +4,23 @@
  */
 ?>
 
-<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px;">
     <div>
         <h2 style="font-size: 20px; font-weight: 700; color: #ffffff;">Cloudflare Tunnel Manager</h2>
         <p style="font-size: 13px; color: var(--text-muted);">Publikasikan website lokal ke internet secara aman tanpa port forwarding</p>
     </div>
-    <div style="display: flex; gap: 10px;">
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button type="button" class="btn btn-secondary" onclick="openQuickTunnelModal()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+            + 1-Click Quick Tunnel
+        </button>
         <button type="button" class="btn btn-primary" onclick="openCustomDomainModal()">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
             </svg>
-            Publikasikan ke Custom Domain (Zero Trust API)
+            Publikasikan ke Custom Domain (Zero Trust)
         </button>
     </div>
 </div>
@@ -68,10 +74,14 @@
             <?php if (empty($tunnels)): ?>
                 <tr>
                     <td colspan="7" style="text-align: center; padding: 48px; color: var(--text-muted);">
-                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin: 0 auto 12px; display: block; opacity: 0.5;">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin: 0 auto 12px; display: block; opacity: 0.5;">
                             <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
                         </svg>
-                        Belum ada Cloudflare Tunnel yang berjalan. Buka menu <strong>Websites</strong> untuk menyalakan 1-Click Quick Tunnel.
+                        <p style="margin-bottom: 16px;">Belum ada Cloudflare Tunnel yang berjalan.</p>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openQuickTunnelModal()">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            Mulai 1-Click Quick Tunnel Sekarang
+                        </button>
                     </td>
                 </tr>
             <?php else: ?>
@@ -145,7 +155,80 @@
     </div>
 </div>
 
+<!-- MODAL QUICK TUNNEL -->
+<div class="modal-backdrop" id="quickTunnelModal">
+    <div class="card" style="width: 100%; max-width: 500px; box-shadow: 0 25px 60px rgba(0,0,0,0.8);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+            <h3 style="font-size: 18px; font-weight: 700; color: #ffffff;">Jalankan 1-Click Quick Tunnel</h3>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeQuickTunnelModal()">✕</button>
+        </div>
+
+        <form id="quickTunnelForm" onsubmit="submitQuickStart(event)">
+            <div class="form-group">
+                <label class="form-label">Pilih Website</label>
+                <select id="quickSiteSelect" class="form-control" required>
+                    <?php foreach ($sites as $site): ?>
+                        <option value="<?= $site['id'] ?>" data-domain="<?= htmlspecialchars($site['domain']) ?>">
+                            <?= htmlspecialchars($site['domain']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="form-help">Cloudflare akan membuatkan URL publik (*.trycloudflare.com) tanpa perlu registrasi domain.</div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+                <button type="button" class="btn btn-secondary" onclick="closeQuickTunnelModal()">Batal</button>
+                <button type="submit" class="btn btn-primary">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    Jalankan Tunnel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
+function openQuickTunnelModal() {
+    document.getElementById('quickTunnelModal').classList.add('show');
+}
+
+function closeQuickTunnelModal() {
+    document.getElementById('quickTunnelModal').classList.remove('show');
+}
+
+async function submitQuickStart(e) {
+    e.preventDefault();
+    const sel = document.getElementById('quickSiteSelect');
+    if (!sel || !sel.value) {
+        alert('Pilih website terlebih dahulu.');
+        return;
+    }
+    const siteId = sel.value;
+    const domain = sel.options[sel.selectedIndex].getAttribute('data-domain');
+    const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+    try {
+        const res = await fetch('/api/tunnels/quick-start', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRF-TOKEN': csrf
+            },
+            body: `_csrf_token=${encodeURIComponent(csrf)}&site_id=${siteId}&domain=${encodeURIComponent(domain)}`
+        });
+        const data = await res.json();
+        if (data.success) {
+            closeQuickTunnelModal();
+            openTaskTerminal();
+            setTimeout(() => location.reload(), 4000);
+        } else {
+            alert(data.error || 'Gagal memulai tunnel.');
+        }
+    } catch (err) {
+        alert('Terjadi kesalahan koneksi.');
+    }
+}
+
 function openCustomDomainModal() {
     document.getElementById('customDomainModal').classList.add('show');
 }
