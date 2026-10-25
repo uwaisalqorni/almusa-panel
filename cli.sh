@@ -59,16 +59,28 @@ cmd_default() {
 cmd_start() {
     echo -e "${BLUE}[*] Starting Almusa Panel services...${NC}"
     if systemctl is-active --quiet mypanel-web.service 2>/dev/null; then
+        echo -e "${GREEN}[✔] Web service is already running via systemd.${NC}"
+    elif pgrep -f "php -S.*64448" >/dev/null 2>&1; then
         echo -e "${GREEN}[✔] Web service is already running.${NC}"
     else
-        systemctl start mypanel-web.service 2>/dev/null || php -S 0.0.0.0:64448 -t "${PANEL_ROOT}/public" "${PANEL_ROOT}/public/index.php" >/dev/null 2>&1 &
-        echo -e "${GREEN}[✔] Web service started.${NC}"
+        if [ -f /etc/systemd/system/mypanel-web.service ]; then
+            systemctl start mypanel-web.service 2>/dev/null || true
+        else
+            nohup php -S 0.0.0.0:64448 -t "${PANEL_ROOT}/public" "${PANEL_ROOT}/public/index.php" </dev/null >/tmp/panel_web.log 2>&1 &
+        fi
+        echo -e "${GREEN}[✔] Web service started on port 64448.${NC}"
     fi
 
     if systemctl is-active --quiet mypanel-worker.service 2>/dev/null; then
+        echo -e "${GREEN}[✔] Worker daemon is already running via systemd.${NC}"
+    elif pgrep -f "php.*task.php" >/dev/null 2>&1; then
         echo -e "${GREEN}[✔] Worker daemon is already running.${NC}"
     else
-        systemctl start mypanel-worker.service 2>/dev/null || nohup php "${PANEL_ROOT}/task.php" >/tmp/task_runner.log 2>&1 &
+        if [ -f /etc/systemd/system/mypanel-worker.service ]; then
+            systemctl start mypanel-worker.service 2>/dev/null || true
+        else
+            nohup php "${PANEL_ROOT}/task.php" </dev/null >/tmp/task_runner.log 2>&1 &
+        fi
         echo -e "${GREEN}[✔] Worker daemon started.${NC}"
     fi
 }
@@ -78,7 +90,8 @@ cmd_stop() {
     systemctl stop mypanel-web.service 2>/dev/null || true
     systemctl stop mypanel-worker.service 2>/dev/null || true
     pkill -f "${PANEL_ROOT}/task.php" || true
-    pkill -f "php -S.*${PANEL_ROOT}/public" || true
+    pkill -f "php.*task.php" || true
+    pkill -f "php -S.*64448" || true
     echo -e "${GREEN}[✔] Services stopped.${NC}"
 }
 
@@ -95,14 +108,14 @@ cmd_status() {
     echo -e "${BOLD}Panel Services Status:${NC}"
     
     local web_status="INACTIVE"
-    if systemctl is-active --quiet mypanel-web.service 2>/dev/null || pgrep -f "php -S.*${PANEL_ROOT}/public" >/dev/null; then
+    if systemctl is-active --quiet mypanel-web.service 2>/dev/null || pgrep -f "php -S.*64448" >/dev/null 2>&1; then
         web_status="${GREEN}ACTIVE (Running)${NC}"
     else
         web_status="${RED}STOPPED${NC}"
     fi
 
     local worker_status="INACTIVE"
-    if systemctl is-active --quiet mypanel-worker.service 2>/dev/null || pgrep -f "${PANEL_ROOT}/task.php" >/dev/null; then
+    if systemctl is-active --quiet mypanel-worker.service 2>/dev/null || pgrep -f "php.*task.php" >/dev/null 2>&1; then
         worker_status="${GREEN}ACTIVE (Running)${NC}"
     else
         worker_status="${RED}STOPPED${NC}"
