@@ -112,11 +112,12 @@ function adminer_object()
     {
         public function name(): string
         {
-            return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">' .
-                   '<a href="/databases" style="font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;text-decoration:none;">' .
-                   '← Almusa Panel' .
-                   '</a>' .
-                   '</div>';
+            return '<a href="/databases" class="almusa-brand-btn" title="Kembali ke Panel Almusa">' .
+                   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:2px;">' .
+                   '<polyline points="15 18 9 12 15 6"></polyline>' .
+                   '</svg>' .
+                   '<span>Almusa Panel</span>' .
+                   '</a>';
         }
 
         public function credentials(): array
@@ -139,12 +140,18 @@ function adminer_object()
             return true;
         }
 
+        public function css(): array
+        {
+            $cssFile = __DIR__ . '/adminer.css';
+            $v = file_exists($cssFile) ? filemtime($cssFile) : time();
+            return ['adminer.css?v=' . $v];
+        }
+
         public function head(): bool
         {
             echo '<link rel="preconnect" href="https://fonts.googleapis.com">' .
                  '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' .
-                 '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">' .
-                 '<link rel="stylesheet" href="adminer.css">';
+                 '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">';
             return true;
         }
     }
