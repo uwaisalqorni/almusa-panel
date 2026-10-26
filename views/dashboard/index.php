@@ -92,7 +92,7 @@ $disk = (float)$stats['disk']['percent'];
             </div>
             <div class="card-body">
                 <div class="rows">
-                    <div class="row">
+                    <div class="row" style="cursor: pointer;" onclick="openNginxModal()" title="Klik untuk mengelola konfigurasi Nginx Global">
                         <span class="icon-tile"><?= ui_icon('server') ?></span>
                         <div class="row-main">
                             <div class="row-title">Nginx</div>

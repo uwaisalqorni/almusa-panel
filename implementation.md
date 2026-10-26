@@ -91,18 +91,35 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Penyempurnaan styling dark theme modern (mengatasi kotak input putih tanpa atribut `type`, penataan tabel kolom, badge partition, hiding versi mentah, dan dynamic cache busting `?v={filemtime}`).
 
 ### Langkah 2.3: Let's Encrypt / Certbot 1-Click SSL
-- [ ] **Tugas:**
-  - Buat endpoint API `/api/sites/issue-ssl` (`site_id`, `provider=letsencrypt`).
-  - Tambahkan skrip task worker untuk menjalankan Certbot:
+- [x] **Tugas:**
+  - [x] Buat endpoint API `/api/sites/issue-ssl`, `/api/sites/disable-ssl`, `/api/sites/renew-ssl`, dan `/api/sites/ssl-status`.
+  - [x] Tambahkan skrip task worker `scripts/ssl_manager.sh` (`issue`, `disable`, `renew`, `status`) yang otomatis menginstal `certbot` & `python3-certbot-nginx` jika belum ada di sistem, menyiapkan webroot ACME challenge, dan menjalankan:
     ```bash
-    certbot certonly --webroot -w /www/wwwroot/{domain} -d {domain} --non-interactive --agree-tos -m admin@{domain}
+    certbot certonly --webroot -w "$DOCROOT" -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --keep-until-expiring
     ```
-  - Otomatis injeksi blok konfigurasi SSL port 443 pada template Nginx virtual host.
-  - Daftarkan timer systemd untuk auto-renewal (`certbot renew`).
-- [ ] **Verifikasi:**
-  - Domain dengan A-record langsung dapat menerbitkan sertifikat SSL yang valid dan redirect otomatis HTTP -> HTTPS.
+  - [x] Otomatis injeksi template virtual host SSL port 443 (`plugins/nginx/conf/vhost_ssl_template.conf`) dengan validasi `nginx -t`, redirect HTTP 301 ke HTTPS, serta mempertahankan port 8088 untuk kompatibilitas reverse proxy & Cloudflare Tunnel.
+  - [x] Daftarkan timer systemd `certbot.timer` dan deploy hook `/etc/letsencrypt/renewal-hooks/deploy/01-almusa-reload-nginx.sh` untuk auto-renewal dan auto-reload Nginx.
+  - [x] Bangun GUI modal modern pada menu `/sites` (badge HTTPS di tabel, tombol shield icon, status sertifikat aktif, sisa masa berlaku, form 1-click issue, renew, dan opsi cabut/disable SSL).
+- [x] **Verifikasi:**
+  - [x] Endpoint status `/api/sites/ssl-status` merespons akurat JSON info sertifikat.
+  - [x] Validasi domain FQDN otomatis mencegah request invalid ke Let's Encrypt.
+  - [x] Worker mengeksekusi instalasi certbot secara otomatis dan `certbot.timer` aktif berjalan di sistem (run twice daily).
 
-### Langkah 2.4: Log Viewer Realtime per Website
+### Langkah 2.4: Pengelolaan & Konfigurasi Nginx Global (`/etc/nginx/nginx.conf`)
+- [x] **Tugas:**
+  - [x] Buat backend controller dan endpoint API `/api/nginx/config`, `/api/nginx/save`, `/api/nginx/test`, dan `/api/nginx/service`.
+  - [x] Buat task worker script `scripts/nginx_manager.sh` dengan sistem **Safety Guard** (validasi otomatis `nginx -t` sebelum diterapkan, auto-rollback jika sintaks salah, dan zero-downtime reload).
+  - [x] Buat modal pengelolaan Nginx global (`_nginx_modal.php`) dengan 3 tab:
+    - **Tab Quick Tuning (GUI)**: Form batas upload (`client_max_body_size`), `server_tokens off`, `gzip on`, `keepalive_timeout`, `worker_processes`, `worker_connections`, dan `fastcgi_read_timeout`.
+    - **Tab Raw Code Editor**: Editor kode langsung untuk `/etc/nginx/nginx.conf` dengan dark mode monospace font dan safety guard.
+    - **Tab Info Layanan & Log**: Status proses Nginx, versi, tombol reload/restart, dan direktori penting.
+  - [x] Pasang tombol "Kelola Nginx" di App Store (`/plugins`) dan interaksi klik pada layanan Nginx di Dashboard (`/dashboard`).
+- [x] **Verifikasi:**
+  - [x] Pengujian sintaks via API `/api/nginx/test` dan terminal berjalan lancar (`nginx: configuration file test is successful`).
+  - [x] Pengujian mode Quick Tuning berhasil memperbarui `client_max_body_size` ke `100M`, `worker_connections` ke `2048`, dan `server_tokens` ke `off`.
+  - [x] Pengujian sintaks salah sengaja (broken syntax) berhasil dicegah oleh Safety Guard, otomatis di-rollback ke konfigurasi sebelumnya, dan Nginx tetap berjalan tanpa downtime.
+
+### Langkah 2.5: Log Viewer Realtime per Website
 - [ ] **Tugas:**
   - Tambahkan modal "Lihat Log" pada setiap website di menu `/sites`.
   - Menampilkan 50 baris terakhir dari:

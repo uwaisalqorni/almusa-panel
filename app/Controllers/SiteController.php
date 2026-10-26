@@ -197,4 +197,186 @@ class SiteController
             'message' => "Virtual Host {$domain} berhasil dihapus" . ($deleteFiles ? " beserta file dokumen" : "") . ".",
         ]);
     }
+
+    public function issueSsl(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $provider = trim($_POST['provider'] ?? 'letsencrypt');
+        $email = trim($_POST['email'] ?? '');
+        $forceHttps = !isset($_POST['force_https']) || !empty($_POST['force_https']) ? 1 : 0;
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $domain = $site['domain'];
+        $docroot = $site['docroot'];
+
+        if (!str_contains($domain, '.') || str_ends_with($domain, '.local')) {
+            Response::json([
+                'success' => false,
+                'error'   => "Domain '{$domain}' bukan nama domain publik (FQDN). Let's Encrypt membutuhkan domain publik yang memiliki minimal satu titik (contoh: domain.com).",
+            ], 400);
+        }
+
+        if (empty($email)) {
+            $email = "admin@{$domain}";
+        }
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            Response::json(['success' => false, 'error' => 'Format email notifikasi SSL tidak valid.'], 400);
+        }
+
+        // Enqueue background task for root daemon
+        $task = $pdo->prepare("
+            INSERT INTO tasks (title, action, payload, status)
+            VALUES (:title, 'site_issue_ssl', :payload, 'pending')
+        ");
+        $task->execute([
+            ':title'   => "Terbitkan Let's Encrypt SSL: {$domain}",
+            ':payload' => json_encode([
+                'site_id'     => $siteId,
+                'domain'      => $domain,
+                'docroot'     => $docroot,
+                'email'       => $email,
+                'force_https' => $forceHttps,
+                'provider'    => $provider,
+            ]),
+        ]);
+
+        Response::json([
+            'success' => true,
+            'message' => "Penerbitan Let's Encrypt SSL untuk '{$domain}' dijadwalkan di background queue.",
+            'task_id' => (int)$pdo->lastInsertId(),
+        ]);
+    }
+
+    public function disableSsl(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $domain = $site['domain'];
+
+        $task = $pdo->prepare("
+            INSERT INTO tasks (title, action, payload, status)
+            VALUES (:title, 'site_disable_ssl', :payload, 'pending')
+        ");
+        $task->execute([
+            ':title'   => "Matikan SSL / HTTPS: {$domain}",
+            ':payload' => json_encode([
+                'site_id' => $siteId,
+                'domain'  => $domain,
+            ]),
+        ]);
+
+        Response::json([
+            'success' => true,
+            'message' => "Pencabutan SSL untuk '{$domain}' sedang diproses di background queue.",
+            'task_id' => (int)$pdo->lastInsertId(),
+        ]);
+    }
+
+    public function renewSsl(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $domain = $site['domain'];
+
+        $task = $pdo->prepare("
+            INSERT INTO tasks (title, action, payload, status)
+            VALUES (:title, 'site_renew_ssl', :payload, 'pending')
+        ");
+        $task->execute([
+            ':title'   => "Perbarui Sertifikat SSL: {$domain}",
+            ':payload' => json_encode([
+                'site_id' => $siteId,
+                'domain'  => $domain,
+            ]),
+        ]);
+
+        Response::json([
+            'success' => true,
+            'message' => "Proses pembaruan SSL untuk '{$domain}' dijadwalkan di background queue.",
+            'task_id' => (int)$pdo->lastInsertId(),
+        ]);
+    }
+
+    public function sslStatus(): void
+    {
+        $siteId = (int)($_GET['site_id'] ?? 0);
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $domain = $site['domain'];
+        $certPath = "/etc/letsencrypt/live/{$domain}/fullchain.pem";
+        $keyPath = "/etc/letsencrypt/live/{$domain}/privkey.pem";
+
+        $hasCert = file_exists($certPath) && file_exists($keyPath);
+        $details = null;
+
+        if ($hasCert) {
+            $certContent = @file_get_contents($certPath);
+            if ($certContent) {
+                $certData = @openssl_x509_parse($certContent);
+                if ($certData) {
+                    $validFrom = $certData['validFrom_time_t'] ?? 0;
+                    $validTo = $certData['validTo_time_t'] ?? 0;
+                    $now = time();
+                    $daysLeft = (int)ceil(($validTo - $now) / 86400);
+
+                    $issuer = $certData['issuer']['O'] ?? $certData['issuer']['CN'] ?? 'Let\'s Encrypt';
+                    $subject = $certData['subject']['CN'] ?? $domain;
+
+                    $details = [
+                        'subject'    => $subject,
+                        'issuer'     => $issuer,
+                        'valid_from' => date('Y-m-d H:i:s', $validFrom),
+                        'valid_to'   => date('Y-m-d H:i:s', $validTo),
+                        'days_left'  => $daysLeft,
+                        'is_expired' => $now > $validTo,
+                        'cert_file'  => $certPath,
+                        'key_file'   => $keyPath,
+                    ];
+                }
+            }
+        }
+
+        Response::json([
+            'success'     => true,
+            'domain'      => $domain,
+            'ssl_enabled' => (int)($site['ssl_enabled'] ?? 0) === 1,
+            'has_cert'    => $hasCert,
+            'details'     => $details,
+        ]);
+    }
 }

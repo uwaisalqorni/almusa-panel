@@ -744,6 +744,20 @@ a.row:hover { background: var(--surface-hover); text-decoration: none; }
 .callout-danger .check { color: var(--text); font-weight: 500; }
 .callout-danger code { display: block; margin: 8px 0 0 26px; }
 
+.callout-info {
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    background: var(--brand-soft);
+    border: 1px solid color-mix(in srgb, var(--brand) 22%, transparent);
+}
+
+.callout-success {
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    background: var(--ok-soft);
+    border: 1px solid color-mix(in srgb, var(--ok) 22%, transparent);
+}
+
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(0.985); } to { opacity: 1; transform: none; } }
 

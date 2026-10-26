@@ -9,6 +9,7 @@ use App\Controllers\PluginController;
 use App\Controllers\TunnelController;
 use App\Controllers\TaskController;
 use App\Controllers\FileManagerController;
+use App\Controllers\NginxController;
 
 // Auth routes
 Router::get('/login', [AuthController::class, 'showLogin']);
@@ -28,6 +29,10 @@ Router::get('/sites', [SiteController::class, 'index']);
 Router::post('/api/sites/create', [SiteController::class, 'create']);
 Router::post('/api/sites/switch-php', [SiteController::class, 'switchPhp']);
 Router::post('/api/sites/delete', [SiteController::class, 'delete']);
+Router::post('/api/sites/issue-ssl', [SiteController::class, 'issueSsl']);
+Router::post('/api/sites/disable-ssl', [SiteController::class, 'disableSsl']);
+Router::post('/api/sites/renew-ssl', [SiteController::class, 'renewSsl']);
+Router::get('/api/sites/ssl-status', [SiteController::class, 'sslStatus']);
 
 // File Manager & Config Editor
 Router::get('/sites/files', [FileManagerController::class, 'index']);
@@ -53,6 +58,12 @@ Router::get('/plugins', [PluginController::class, 'index']);
 Router::post('/api/plugins/install', [PluginController::class, 'install']);
 Router::post('/api/plugins/uninstall', [PluginController::class, 'uninstall']);
 Router::post('/api/plugins/php/extension', [PluginController::class, 'manageExtension']);
+
+// Nginx Global Manager
+Router::get('/api/nginx/config', [NginxController::class, 'getConfig']);
+Router::post('/api/nginx/save', [NginxController::class, 'saveConfig']);
+Router::post('/api/nginx/test', [NginxController::class, 'testConfig']);
+Router::post('/api/nginx/service', [NginxController::class, 'serviceControl']);
 
 // Cloudflare Tunnels
 Router::get('/tunnels', [TunnelController::class, 'index']);

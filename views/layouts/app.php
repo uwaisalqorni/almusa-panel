@@ -168,6 +168,8 @@ $isActive = static function (string $href) use ($currentUri): bool {
     </div>
 </div>
 
+<?php require __DIR__ . '/_nginx_modal.php'; ?>
+
 <script src="<?= asset_url('/assets/js/panel.js') ?>"></script>
 </body>
 </html>

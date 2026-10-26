@@ -81,6 +81,11 @@ $services = [
                         <?= ui_icon('download') ?> <?= e($s['install']) ?>
                     </button>
                 <?php else: ?>
+                    <?php if ($s['key'] === 'nginx'): ?>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="openNginxModal()">
+                            <?= ui_icon('sliders') ?> Kelola Nginx
+                        </button>
+                    <?php endif; ?>
                     <?php if ($s['open']): ?>
                         <a href="<?= e($s['open'][0]) ?>" class="btn btn-secondary btn-sm"><?= e($s['open'][1]) ?></a>
                     <?php endif; ?>

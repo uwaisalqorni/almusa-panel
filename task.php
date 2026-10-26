@@ -187,6 +187,45 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             if (!file_exists($script) || !file_exists($srcFile)) return null;
             return "bash " . escapeshellarg($script) . " save_conf " . escapeshellarg($domain) . " " . escapeshellarg($srcFile);
 
+        case 'site_issue_ssl':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $docroot = preg_replace('/[^a-zA-Z0-9_\.\/\-]/', '', (string)($payload['docroot'] ?? ''));
+            $email = filter_var($payload['email'] ?? '', FILTER_VALIDATE_EMAIL) ? (string)$payload['email'] : "admin@{$domain}";
+            $forceHttps = !empty($payload['force_https']) ? '1' : '0';
+            $script = "{$root}/scripts/ssl_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " issue " . escapeshellarg($domain) . " " . escapeshellarg($docroot) . " " . escapeshellarg($email) . " " . escapeshellarg($forceHttps);
+
+        case 'site_disable_ssl':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $script = "{$root}/scripts/ssl_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " disable " . escapeshellarg($domain);
+
+        case 'site_renew_ssl':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $script = "{$root}/scripts/ssl_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " renew " . escapeshellarg($domain);
+
+        case 'nginx_save_global':
+            $srcFile = (string)($payload['src_file'] ?? '');
+            $script = "{$root}/scripts/nginx_manager.sh";
+            if (!file_exists($script) || !file_exists($srcFile)) return null;
+            return "bash " . escapeshellarg($script) . " save " . escapeshellarg($srcFile);
+
+        case 'nginx_test':
+            $srcFile = (string)($payload['src_file'] ?? '');
+            $script = "{$root}/scripts/nginx_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " test " . ($srcFile ? escapeshellarg($srcFile) : '');
+
+        case 'nginx_service':
+            $subCmd = preg_replace('/[^a-z]/', '', (string)($payload['command'] ?? 'reload'));
+            $script = "{$root}/scripts/nginx_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " service " . escapeshellarg($subCmd);
+
         case 'fix_permissions':
             $targetPath = (string)($payload['path'] ?? '');
             $script = "{$root}/scripts/vhost_manager.sh";

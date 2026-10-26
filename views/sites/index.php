@@ -51,7 +51,14 @@ $rewriteLabels = [
                 <?php else: foreach ($sites as $site): ?>
                     <tr>
                         <td>
-                            <div class="cell-title"><?= e($site['domain']) ?></div>
+                            <div class="cell-title d-flex align-center gap-2">
+                                <span><?= e($site['domain']) ?></span>
+                                <?php if (!empty($site['ssl_enabled'])): ?>
+                                    <span class="badge badge-success no-dot" title="SSL Aktif (HTTPS)" style="cursor:pointer; font-size: 11px; padding: 2px 6px;" onclick="openSslModal(<?= (int)$site['id'] ?>, <?= js_arg($site['domain']) ?>)">
+                                        <?= ui_icon('shield') ?> HTTPS
+                                    </span>
+                                <?php endif; ?>
+                            </div>
                             <div class="cell-sub"><?= e($site['docroot']) ?></div>
                         </td>
                         <td>
@@ -88,6 +95,12 @@ $rewriteLabels = [
                         </td>
                         <td>
                             <div class="cell-actions">
+                                <button type="button" class="btn btn-ghost btn-icon btn-sm <?= !empty($site['ssl_enabled']) ? 'text-success' : '' ?>"
+                                        title="<?= !empty($site['ssl_enabled']) ? 'Kelola SSL (Aktif)' : 'Pasang Let\'s Encrypt SSL' ?>"
+                                        aria-label="SSL <?= e($site['domain']) ?>"
+                                        onclick="openSslModal(<?= (int)$site['id'] ?>, <?= js_arg($site['domain']) ?>)">
+                                    <?= ui_icon('shield') ?>
+                                </button>
                                 <a href="/sites/files?site_id=<?= (int)$site['id'] ?>" class="btn btn-secondary btn-sm" title="Buka File Manager">
                                     <?= ui_icon('folder') ?> Files
                                 </a>
@@ -294,6 +307,248 @@ async function startQuickTunnel(siteId, domain, btn) {
             Almusa.reload('Tunnel sedang dibuat…', 'info', 4000);
         } else {
             Almusa.toast(data.error || 'Gagal memulai tunnel.', 'error');
+            restore();
+        }
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+        restore();
+    }
+}
+</script>
+
+<!-- Modal Kelola SSL / Let's Encrypt -->
+<div class="modal-backdrop" id="sslModal">
+    <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="sslModalTitle">
+        <div class="modal-header">
+            <div>
+                <h2 class="modal-title" id="sslModalTitle">Sertifikat SSL / HTTPS</h2>
+                <p class="modal-subtitle">Kelola sertifikat Let's Encrypt untuk <strong id="sslDomainTitle"></strong></p>
+            </div>
+            <button type="button" class="icon-btn" onclick="closeSslModal()" aria-label="Tutup"><?= ui_icon('x') ?></button>
+        </div>
+        <div class="modal-body">
+            <!-- Loading indicator -->
+            <div id="sslLoadingState" class="text-center py-6" style="display:none; text-align: center; padding: 24px 0;">
+                <div class="text-muted">Memeriksa status sertifikat SSL…</div>
+            </div>
+
+            <!-- Content Area -->
+            <div id="sslContentArea">
+                <!-- Active Certificate Card -->
+                <div id="sslActiveCard" class="card mb-4" style="display:none; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); margin-bottom: 16px;">
+                    <div class="card-body">
+                        <div class="d-flex align-center justify-between mb-3" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                            <div class="d-flex align-center gap-2">
+                                <span class="badge badge-success"><?= ui_icon('shield') ?> SSL Terpasang & Aktif</span>
+                            </div>
+                            <span id="sslDaysBadge" class="badge badge-neutral"></span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px;">
+                            <div>
+                                <div class="text-muted" style="color: var(--text-3); font-size: 12px;">Domain / Subjek</div>
+                                <div style="font-weight: 500;" id="sslSubjectText">-</div>
+                            </div>
+                            <div>
+                                <div class="text-muted" style="color: var(--text-3); font-size: 12px;">Penerbit (CA)</div>
+                                <div style="font-weight: 500;" id="sslIssuerText">-</div>
+                            </div>
+                            <div>
+                                <div class="text-muted" style="color: var(--text-3); font-size: 12px;">Masa Berlaku</div>
+                                <div style="font-weight: 500;" id="sslValidDates">-</div>
+                            </div>
+                            <div>
+                                <div class="text-muted" style="color: var(--text-3); font-size: 12px;">Auto-Renewal</div>
+                                <div style="font-weight: 500; color: var(--ok);">Aktif (Systemd Timer)</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+                            <button type="button" class="btn btn-secondary btn-sm" id="btnRenewSsl" onclick="renewSiteSsl()">
+                                <?= ui_icon('refresh') ?> Perbarui sertifikat (Renew)
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm" id="btnDisableSsl" style="color: var(--err);" onclick="disableSiteSsl()">
+                                <?= ui_icon('trash') ?> Matikan SSL
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Issue SSL -->
+                <form id="issueSslForm" onsubmit="submitIssueSsl(event)">
+                    <div class="callout-info mb-4" style="margin-bottom: 16px;">
+                        <div style="display: flex; gap: 8px; font-size: 13px; line-height: 1.5;">
+                            <div><?= ui_icon('info') ?></div>
+                            <div>
+                                <strong>Persyaratan 1-Click Let's Encrypt:</strong>
+                                <ul style="margin: 4px 0 0 16px; padding: 0;">
+                                    <li>DNS domain (A-record) harus sudah mengarah ke IP publik server ini.</li>
+                                    <li>Port 80 harus terbuka agar bot verifikasi ACME dapat memvalidasi token webroot.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label class="label" for="sslEmail">Email notifikasi Let's Encrypt</label>
+                        <input type="email" id="sslEmail" class="input" required placeholder="admin@domain.com">
+                        <div class="help">Digunakan oleh Let's Encrypt untuk notifikasi darurat masa kedaluwarsa.</div>
+                    </div>
+
+                    <div class="field" style="margin-top: 12px;">
+                        <label class="check">
+                            <input type="checkbox" id="sslForceHttps" value="1" checked>
+                            <span>Paksa redirect otomatis HTTP ke HTTPS (301 Permanent Redirect)</span>
+                        </label>
+                    </div>
+
+                    <div style="margin-top: 18px;">
+                        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;" id="btnSubmitIssueSsl">
+                            <?= ui_icon('shield') ?> <span id="btnSubmitIssueText">Terbitkan SSL Sekarang (1-Click Let's Encrypt)</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeSslModal()">Tutup</button>
+        </div>
+    </div>
+</div>
+
+<script>
+var currentSslSiteId = null;
+var currentSslDomain = null;
+
+async function openSslModal(siteId, domain) {
+    currentSslSiteId = siteId;
+    currentSslDomain = domain;
+
+    document.getElementById('sslDomainTitle').textContent = domain;
+    document.getElementById('sslEmail').value = 'admin@' + domain;
+    document.getElementById('sslForceHttps').checked = true;
+
+    document.getElementById('sslLoadingState').style.display = 'block';
+    document.getElementById('sslContentArea').style.display = 'none';
+
+    Almusa.openModal('sslModal');
+
+    try {
+        var data = await Almusa.get('/api/sites/ssl-status?site_id=' + siteId);
+        document.getElementById('sslLoadingState').style.display = 'none';
+        document.getElementById('sslContentArea').style.display = 'block';
+
+        var activeCard = document.getElementById('sslActiveCard');
+        var issueText = document.getElementById('btnSubmitIssueText');
+
+        if (data.has_cert && data.details) {
+            activeCard.style.display = 'block';
+            document.getElementById('sslSubjectText').textContent = data.details.subject || domain;
+            document.getElementById('sslIssuerText').textContent = data.details.issuer || "Let's Encrypt";
+            document.getElementById('sslValidDates').textContent = (data.details.valid_from ? data.details.valid_from.substring(0, 10) : '') + ' s/d ' + (data.details.valid_to ? data.details.valid_to.substring(0, 10) : '');
+
+            var daysBadge = document.getElementById('sslDaysBadge');
+            if (data.details.is_expired) {
+                daysBadge.className = 'badge badge-danger';
+                daysBadge.textContent = 'Kedaluwarsa';
+            } else {
+                daysBadge.className = 'badge badge-success';
+                daysBadge.textContent = 'Sisa ' + data.details.days_left + ' hari';
+            }
+            issueText.textContent = 'Terbitkan Ulang Sertifikat SSL';
+        } else {
+            activeCard.style.display = 'none';
+            issueText.textContent = 'Terbitkan SSL Sekarang (1-Click Let\'s Encrypt)';
+        }
+    } catch (e) {
+        document.getElementById('sslLoadingState').style.display = 'none';
+        document.getElementById('sslContentArea').style.display = 'block';
+        document.getElementById('sslActiveCard').style.display = 'none';
+    }
+}
+
+function closeSslModal() {
+    Almusa.closeModal('sslModal');
+    currentSslSiteId = null;
+    currentSslDomain = null;
+}
+
+async function submitIssueSsl(e) {
+    e.preventDefault();
+    if (!currentSslSiteId) return;
+
+    var btn = document.getElementById('btnSubmitIssueSsl');
+    var restore = Almusa.busy(btn, 'Menerbitkan…');
+
+    try {
+        var data = await Almusa.post('/api/sites/issue-ssl', {
+            site_id: currentSslSiteId,
+            email: document.getElementById('sslEmail').value.trim(),
+            force_https: document.getElementById('sslForceHttps').checked ? 1 : 0,
+            provider: 'letsencrypt'
+        });
+
+        if (data.success) {
+            closeSslModal();
+            openTaskTerminal();
+            Almusa.toast(data.message, 'info');
+        } else {
+            Almusa.toast(data.error || 'Gagal menerbitkan SSL.', 'error');
+            restore();
+        }
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+        restore();
+    }
+}
+
+async function renewSiteSsl() {
+    if (!currentSslSiteId) return;
+    var ok = await Almusa.confirm({
+        title: 'Perbarui Sertifikat SSL',
+        message: 'Certbot akan mencoba memperbarui sertifikat SSL untuk domain ' + currentSslDomain + '.',
+        confirmText: 'Perbarui Sekarang'
+    });
+    if (!ok) return;
+
+    var btn = document.getElementById('btnRenewSsl');
+    var restore = Almusa.busy(btn, 'Memperbarui…');
+
+    try {
+        var data = await Almusa.post('/api/sites/renew-ssl', { site_id: currentSslSiteId });
+        if (data.success) {
+            closeSslModal();
+            openTaskTerminal();
+            Almusa.toast(data.message, 'info');
+        } else {
+            Almusa.toast(data.error || 'Gagal memperbarui SSL.', 'error');
+            restore();
+        }
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+        restore();
+    }
+}
+
+async function disableSiteSsl() {
+    if (!currentSslSiteId) return;
+    var ok = await Almusa.confirm({
+        title: 'Cabut / Matikan SSL',
+        message: 'Konfigurasi virtual host ' + currentSslDomain + ' akan dikembalikan ke HTTP biasa (tanpa SSL port 443). Anda yakin?',
+        confirmText: 'Matikan SSL',
+        danger: true
+    });
+    if (!ok) return;
+
+    var btn = document.getElementById('btnDisableSsl');
+    var restore = Almusa.busy(btn, 'Mematikan…');
+
+    try {
+        var data = await Almusa.post('/api/sites/disable-ssl', { site_id: currentSslSiteId });
+        if (data.success) {
+            closeSslModal();
+            openTaskTerminal();
+            Almusa.toast(data.message, 'info');
+        } else {
+            Almusa.toast(data.error || 'Gagal mematikan SSL.', 'error');
             restore();
         }
     } catch (err) {
