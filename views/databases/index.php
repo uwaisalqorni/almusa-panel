@@ -10,6 +10,9 @@
         <p class="page-desc">Kelola database MySQL / MariaDB, hak akses user, dan backup.</p>
     </div>
     <div class="page-actions">
+        <a href="/adminer" target="_blank" rel="noopener" class="btn btn-secondary">
+            <?= ui_icon('database') ?> Web GUI Database (Adminer)
+        </a>
         <button type="button" class="btn btn-primary" onclick="openAddDbModal()">
             <?= ui_icon('plus') ?> Tambah database
         </button>
@@ -75,6 +78,9 @@
                         <td><span class="badge badge-neutral no-dot"><?= e($db['charset']) ?></span></td>
                         <td>
                             <div class="cell-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="openAdminerSso(<?= (int)$db['id'] ?>, <?= js_arg($db['db_name']) ?>, this)" title="Buka di Adminer dengan Single Sign-On">
+                                    <?= ui_icon('external') ?> Kelola Data
+                                </button>
                                 <button type="button" class="btn btn-secondary btn-sm" onclick="backupDb(<?= (int)$db['id'] ?>, <?= js_arg($db['db_name']) ?>)">
                                     <?= ui_icon('archive') ?> Backup
                                 </button>
@@ -231,6 +237,22 @@ async function deleteDb(id, dbName) {
         else Almusa.toast(data.error || 'Gagal menghapus database.', 'error');
     } catch (err) {
         Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+    }
+}
+
+async function openAdminerSso(dbId, dbName, btn) {
+    var restore = btn ? Almusa.busy(btn, 'Membuka…') : function () {};
+    try {
+        var res = await Almusa.post('/api/databases/sso-token', { id: dbId });
+        if (res.success && res.url) {
+            window.open(res.url, '_blank');
+        } else {
+            Almusa.toast(res.error || 'Gagal membuat sesi SSO Adminer.', 'error');
+        }
+    } catch (e) {
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+    } finally {
+        restore();
     }
 }
 </script>

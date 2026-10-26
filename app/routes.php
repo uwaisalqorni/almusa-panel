@@ -46,6 +46,7 @@ Router::post('/api/databases/create', [DatabaseController::class, 'create']);
 Router::post('/api/databases/change-password', [DatabaseController::class, 'changePassword']);
 Router::post('/api/databases/delete', [DatabaseController::class, 'delete']);
 Router::post('/api/databases/backup', [DatabaseController::class, 'backup']);
+Router::post('/api/databases/sso-token', [DatabaseController::class, 'ssoToken']);
 
 // Plugins & App Store
 Router::get('/plugins', [PluginController::class, 'index']);

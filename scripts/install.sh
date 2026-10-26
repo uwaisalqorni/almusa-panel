@@ -126,7 +126,10 @@ echo \App\Core\Database::getSetting('panel_port', '64448');
 ")
 
 # Pastikan direktori config ada
-mkdir -p /www/panel/config /run/php
+mkdir -p /www/panel/config /run/php /www/panel/public/adminer
+if [ ! -f /www/panel/public/adminer/adminer-core.php ]; then
+    curl -fsSL https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1-mysql.php -o /www/panel/public/adminer/adminer-core.php 2>/dev/null || true
+fi
 
 # Tulis konfigurasi Nginx untuk panel jika belum ada
 cat << EOF > /www/panel/config/nginx-panel.conf

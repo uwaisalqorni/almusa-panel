@@ -266,4 +266,58 @@ class DatabaseController
             'message' => "Backup database `{$dbName}` sedang diproses. Cek di terminal untuk progress.",
         ]);
     }
+
+    public function ssoToken(): void
+    {
+        $id = (int)($_POST['id'] ?? 0);
+
+        $pdoSqlite = Database::getInstance();
+        $server = '127.0.0.1';
+        $username = 'root';
+        $password = Database::getSetting('mysql_root_pass', '');
+        $database = '';
+
+        if ($id > 0) {
+            $stmt = $pdoSqlite->prepare("SELECT * FROM databases WHERE id = :id LIMIT 1");
+            $stmt->execute([':id' => $id]);
+            $db = $stmt->fetch();
+
+            if (!$db) {
+                Response::json(['success' => false, 'error' => 'Database tidak ditemukan.'], 404);
+            }
+
+            $server = $db['access_host'] ?: '127.0.0.1';
+            $username = $db['db_user'] ?: 'root';
+            $plainPass = base64_decode($db['db_password_enc'] ?? '') ?: '';
+
+            if ($username === 'root' || empty($plainPass)) {
+                $password = Database::getSetting('mysql_root_pass', '');
+            } else {
+                $password = $plainPass;
+            }
+
+            $database = $db['db_name'];
+        }
+
+        $token = bin2hex(random_bytes(24));
+
+        if (!isset($_SESSION['adminer_sso'])) {
+            $_SESSION['adminer_sso'] = [];
+        }
+
+        $_SESSION['adminer_sso'][$token] = [
+            'server'   => $server,
+            'username' => $username,
+            'password' => $password,
+            'db'       => $database,
+            'expires'  => time() + 120,
+        ];
+
+        Response::json([
+            'success'   => true,
+            'sso_token' => $token,
+            'url'       => '/adminer/?sso=' . $token,
+        ]);
+    }
 }
+

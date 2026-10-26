@@ -80,12 +80,14 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Diuji validasi sintaks Nginx (sintaks invalid langsung ditolak dengan status 400 dan pesan error spesifik, konfigurasi asli tetap aman).
 
 ### Langkah 2.2: Database Web GUI (Embedded Adminer)
-- [ ] **Tugas:**
-  - Pasang file `adminer.php` di direktori terisolasi (`/www/panel/public/adminer/index.php`).
-  - Tambahkan autentikasi auto-login sekali klik (*single-sign-on token*) dari menu `/databases`.
-  - Lindungi rute Adminer agar hanya bisa diakses saat session admin panel aktif.
-- [ ] **Verifikasi:**
-  - Klik tombol "Kelola Data" pada salah satu database, jendela Adminer langsung terbuka ke database bersangkutan tanpa meminta password ulang.
+- [x] **Tugas:**
+  - [x] Pasang engine Adminer di direktori terisolasi (`/www/panel/public/adminer/index.php` dan `adminer-core.php`) dengan custom CSS theme flat & modern (`adminer.css`).
+  - [x] Tambahkan autentikasi auto-login sekali klik (*single-sign-on token*) via endpoint `/api/databases/sso-token` dan tombol "Kelola Data" per baris database serta tombol utama "Web GUI Database (Adminer)" di `/databases`.
+  - [x] Lindungi rute Adminer dengan session guard ketat (`Auth::check()`); akses langsung tanpa session panel ditolak dengan HTTP 403 Forbidden.
+- [x] **Verifikasi:**
+  - [x] Akses tanpa login ke `/adminer/` langsung ditolak dengan status 403 Forbidden dan tampilan kartu peringatan Almusa.
+  - [x] Klik tombol "Kelola Data" pada database menghasilkan token SSO sekali pakai, membuka Adminer di tab baru, dan langsung terotentikasi ke database bersangkutan tanpa meminta password.
+  - [x] Akses langsung ke `/adminer/` bagi admin yang sudah login otomatis menghubungkan sesi root/aktif dengan tombol kembali `← Almusa Panel`.
 
 ### Langkah 2.3: Let's Encrypt / Certbot 1-Click SSL
 - [ ] **Tugas:**
