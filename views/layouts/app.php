@@ -13,6 +13,9 @@ $nav = [
         ['/sites/files', 'File Manager', 'folder'],
         ['/databases', 'Databases', 'database'],
     ],
+    'Otomasi & Tugas' => [
+        ['/cron', 'Cron Jobs', 'clock'],
+    ],
     'Ekstensi & jaringan' => [
         ['/plugins', 'App Store', 'package'],
         ['/tunnels', 'Cloudflare Tunnel', 'cloud'],
@@ -28,6 +31,9 @@ $isActive = static function (string $href) use ($currentUri): bool {
     }
     if ($href === '/sites') {
         return $currentUri === '/sites';
+    }
+    if ($href === '/cron') {
+        return $currentUri === '/cron';
     }
     return str_starts_with($currentUri, $href);
 };

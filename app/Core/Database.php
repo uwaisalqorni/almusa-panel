@@ -147,6 +147,22 @@ class Database
             last_attempt_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             locked_until DATETIME DEFAULT NULL
         );
+
+        -- 8. Cron Jobs Manager
+        CREATE TABLE IF NOT EXISTS cron_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            schedule_type TEXT DEFAULT 'custom',
+            expression TEXT NOT NULL,
+            command TEXT NOT NULL,
+            run_as_user TEXT NOT NULL DEFAULT 'afandi',
+            log_mode TEXT NOT NULL DEFAULT 'file',
+            is_enabled INTEGER DEFAULT 1,
+            last_run_at DATETIME DEFAULT NULL,
+            last_exit_code INTEGER DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 SQL;
 
         $pdo->exec($schema);

@@ -140,15 +140,20 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
 > **Tujuan:** Menjamin keandalan data website dan memfasilitasi tugas otomatis framework modern (seperti Laravel & WordPress).
 
 ### Langkah 3.1: Cron Job GUI Manager
-- [ ] **Tugas:**
-  - Buat menu navigasi baru: **Cron Jobs** (`/cron`).
-  - Tabel daftar cron yang aktif di sistem (`/etc/cron.d/almusa-cron` atau crontab `www-data`).
-  - Form tambah tugas:
-    - Pilihan interval visual (Setiap menit, Setiap jam, Setiap hari jam 00:00, atau Custom Cron Expression).
-    - Perintah shell (misal: `/usr/bin/php8.3 /www/wwwroot/app/artisan schedule:run`).
-  - Tombol eksekusi manual untuk menguji script.
-- [ ] **Verifikasi:**
-  - Jadwalkan script echo ke file temporary; verifikasi file terbuat sesuai jadwal cron.
+- [x] **Tugas:**
+  - [x] Buat menu navigasi baru: **Cron Jobs** (`/cron`) di sidebar panel dengan ikon jam (`clock`).
+  - [x] Tabel daftar cron terintegrasi langsung dengan konfigurasi sistem Linux (`/etc/cron.d/almusa-cron`).
+  - [x] Form tambah/edit tugas:
+    - Pilihan interval visual: Setiap menit (`* * * * *`), Setiap 5/15/30 menit, Setiap jam, Setiap hari (00:00), Setiap minggu, Setiap bulan, serta Ekspresi Kustom dengan preview deskripsi otomatis.
+    - Template preset cepat framework: Laravel Scheduler (`php artisan schedule:run`), WordPress WP-Cron (`wp-cron.php`), dan Pembersih Cache Harian.
+    - Pilihan user pelaksana (`afandi`, `www-data`, `root`) dan mode penyimpanan log output.
+  - [x] Tombol eksekusi manual ("Jalankan Sekarang") untuk menguji script seketika lengkap dengan popup durasi dan hasil output terminal.
+  - [x] Modal Viewer Log Output & tombol kosongkan log riwayat tugas cron.
+- [x] **Verifikasi:**
+  - [x] Pembuatan tugas cron uji coba berhasil menulis dan mensinkronkan `/etc/cron.d/almusa-cron` dengan permission `0644 root:root`.
+  - [x] Tombol eksekusi manual berhasil mengeksekusi perintah shell dalam 0.01 detik (Exit Code 0).
+  - [x] Daemon sistem cron Linux (`cron.service`) terkonfirmasi di `journalctl` mengeksekusi tugas otomatis setiap menit secara akurat dan mencatat outputnya ke `data/cron_logs/cron_1.log`.
+  - [x] Pengujian jeda/aktif (toggle) berhasil memperbarui `/etc/cron.d/almusa-cron` seketika.
 
 ### Langkah 3.2: Automated Database & Site Backup Engine
 - [ ] **Tugas:**

@@ -10,6 +10,7 @@ use App\Controllers\TunnelController;
 use App\Controllers\TaskController;
 use App\Controllers\FileManagerController;
 use App\Controllers\NginxController;
+use App\Controllers\CronController;
 
 // Auth routes
 Router::get('/login', [AuthController::class, 'showLogin']);
@@ -72,6 +73,16 @@ Router::get('/tunnels', [TunnelController::class, 'index']);
 Router::post('/api/tunnels/quick-start', [TunnelController::class, 'quickStart']);
 Router::post('/api/tunnels/quick-stop', [TunnelController::class, 'quickStop']);
 Router::post('/api/tunnels/custom-publish', [TunnelController::class, 'customPublish']);
+
+// Cron Jobs Manager
+Router::get('/cron', [CronController::class, 'index']);
+Router::post('/api/cron/create', [CronController::class, 'create']);
+Router::post('/api/cron/update', [CronController::class, 'update']);
+Router::post('/api/cron/toggle', [CronController::class, 'toggle']);
+Router::post('/api/cron/delete', [CronController::class, 'delete']);
+Router::post('/api/cron/run-now', [CronController::class, 'runNow']);
+Router::get('/api/cron/logs', [CronController::class, 'getLogs']);
+Router::post('/api/cron/clear-logs', [CronController::class, 'clearLogs']);
 
 // Tasks & Real-time Logs API
 Router::get('/api/system/stats', [DashboardController::class, 'stats']);
