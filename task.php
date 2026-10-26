@@ -226,6 +226,13 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             if (!file_exists($script)) return null;
             return "bash " . escapeshellarg($script) . " service " . escapeshellarg($subCmd);
 
+        case 'site_clear_log':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $logType = preg_replace('/[^a-z]/', '', (string)($payload['type'] ?? 'all'));
+            $script = "{$root}/scripts/vhost_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " clear_log " . escapeshellarg($domain) . " " . escapeshellarg($logType);
+
         case 'fix_permissions':
             $targetPath = (string)($payload['path'] ?? '');
             $script = "{$root}/scripts/vhost_manager.sh";

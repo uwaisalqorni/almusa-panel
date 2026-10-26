@@ -78,6 +78,10 @@ case "$ACTION" in
                 systemctl "$CMD" nginx
                 echo "[SUCCESS] Nginx service $CMD executed."
                 ;;
+            worker)
+                echo "[INFO] Restarting mypanel-worker daemon..."
+                systemctl restart mypanel-worker
+                ;;
             *)
                 echo "[ERROR] Unsupported service command: '$CMD'"
                 exit 1

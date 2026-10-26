@@ -107,6 +107,10 @@ $rewriteLabels = [
                                 <a href="/sites/files?site_id=<?= (int)$site['id'] ?>&edit=nginx" class="btn btn-ghost btn-icon btn-sm" title="Edit Konfigurasi Nginx" aria-label="Nginx Conf">
                                     <?= ui_icon('sliders') ?>
                                 </a>
+                                <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Lihat Log Realtime (Access/Error)" aria-label="Log <?= e($site['domain']) ?>"
+                                        onclick="openSiteLogModal(<?= (int)$site['id'] ?>, <?= js_arg($site['domain']) ?>)">
+                                    <?= ui_icon('file-text') ?>
+                                </button>
                                 <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Hapus website" aria-label="Hapus <?= e($site['domain']) ?>"
                                         onclick="openDeleteSiteModal(<?= (int)$site['id'] ?>, <?= js_arg($site['domain']) ?>, <?= js_arg($site['docroot']) ?>)">
                                     <?= ui_icon('trash') ?>
@@ -553,6 +557,371 @@ async function disableSiteSsl() {
         }
     } catch (err) {
         Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+        restore();
+    }
+}
+</script>
+
+<style>
+.live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+.live-dot.live-active {
+    background-color: #10b981;
+    box-shadow: 0 0 8px #10b981;
+    animation: pulse-live 1.6s infinite ease-in-out;
+}
+.live-dot.live-paused {
+    background-color: #6b7280;
+    box-shadow: none;
+    animation: none;
+}
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.85); }
+}
+
+.modal-tab-btn {
+    background: transparent;
+    border: none;
+    padding: 7px 13px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-3);
+    cursor: pointer;
+    border-radius: var(--radius);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: all 0.15s ease;
+}
+.modal-tab-btn:hover {
+    color: var(--text);
+    background: var(--surface-2);
+}
+.modal-tab-btn.active {
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.12);
+    font-weight: 600;
+}
+</style>
+
+<!-- Modal Log Realtime per Website -->
+<div class="modal-backdrop" id="siteLogModal">
+    <div class="modal modal-lg" style="max-width: 1040px; width: 95vw; height: min(85vh, 760px); display: flex; flex-direction: column; padding: 0; overflow: hidden;" role="dialog" aria-modal="true" aria-labelledby="siteLogDomainText">
+        
+        <!-- Header -->
+        <div class="modal-header" style="padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+                <div class="icon-tile" style="width: 36px; height: 36px; border-radius: 8px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <?= ui_icon('file-text') ?>
+                </div>
+                <div style="min-width: 0;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <h2 class="modal-title" style="font-size: 15px; margin: 0; font-weight: 600;">Log Realtime:</h2>
+                        <span id="siteLogDomainText" style="font-size: 15px; font-weight: 700; color: #38bdf8;"></span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                        <span>File:</span>
+                        <code id="siteLogPathDisplay" style="font-family: var(--mono); color: var(--text-2); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border);"></code>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="icon-btn" onclick="closeSiteLogModal()" aria-label="Tutup" style="margin-left: 12px;">
+                <?= ui_icon('x', 'icon-lg') ?>
+            </button>
+        </div>
+
+        <!-- Toolbar: Tabs & Controls -->
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 10px 20px; background: var(--surface-2); border-bottom: 1px solid var(--border); flex-shrink: 0;">
+            <!-- Tabs (Access / Error) -->
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button type="button" class="modal-tab-btn active" id="tabBtnLogAccess" onclick="switchSiteLogTab('access')">
+                    <?= ui_icon('file-text') ?> Access Log
+                </button>
+                <button type="button" class="modal-tab-btn" id="tabBtnLogError" onclick="switchSiteLogTab('error')">
+                    <?= ui_icon('alert-circle') ?> Error Log
+                </button>
+            </div>
+
+            <!-- Right Controls: Line Limit, Auto-refresh, Manual Refresh, Clear Log -->
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <label for="siteLogLinesSelect" style="font-size: 12px; color: var(--text-3); white-space: nowrap;">Tampilkan:</label>
+                    <select id="siteLogLinesSelect" class="select" style="padding: 4px 10px; font-size: 12px; height: 32px; width: auto;" onchange="onSiteLogLinesChange()">
+                        <option value="50" selected>50 baris</option>
+                        <option value="100">100 baris</option>
+                        <option value="200">200 baris</option>
+                        <option value="500">500 baris</option>
+                    </select>
+                </div>
+
+                <!-- Auto-refresh Toggle Button -->
+                <button type="button" class="btn btn-secondary btn-sm" id="btnLogAutoRefresh" onclick="toggleLogAutoRefresh()" style="gap: 6px; height: 32px;" title="Klik untuk menjeda / mengaktifkan auto-refresh">
+                    <span class="live-dot live-active" id="logLiveDot"></span>
+                    <span id="logAutoRefreshText">Auto-refresh (3s)</span>
+                </button>
+
+                <!-- Refresh Button -->
+                <button type="button" class="btn btn-secondary btn-sm btn-icon" id="btnLogRefresh" onclick="fetchSiteLogs(true)" title="Segarkan Log Sekarang" aria-label="Segarkan" style="height: 32px; width: 32px;">
+                    <?= ui_icon('refresh') ?>
+                </button>
+
+                <!-- Clear / Truncate Log Button -->
+                <button type="button" class="btn btn-ghost btn-sm" id="btnLogClear" onclick="clearSiteLogs()" title="Kosongkan file log ini" style="color: var(--err); height: 32px; gap: 4px;">
+                    <?= ui_icon('trash') ?> Kosongkan
+                </button>
+            </div>
+        </div>
+
+        <!-- Terminal Console Body -->
+        <div id="siteLogContainer" style="flex: 1; min-height: 280px; overflow-y: auto; background: #080b11; padding: 14px 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; font-size: 12px; line-height: 1.6; color: #d6dbe3; position: relative;">
+            
+            <!-- Loading Overlay -->
+            <div id="siteLogLoading" style="display: none; position: absolute; inset: 0; background: rgba(8, 11, 17, 0.7); backdrop-filter: blur(2px); align-items: center; justify-content: center; z-index: 10;">
+                <div style="display: flex; align-items: center; gap: 10px; background: #121620; padding: 10px 18px; border-radius: 8px; border: 1px solid #232832; color: #38bdf8;">
+                    <span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+                    <span>Memuat data log…</span>
+                </div>
+            </div>
+
+            <!-- Content Lines -->
+            <div id="siteLogContent" style="white-space: pre-wrap; word-break: break-all;"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="modal-footer" style="padding: 10px 20px; background: var(--surface-2); border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--text-3); flex-wrap: wrap;">
+                <div>Ukuran: <strong id="siteLogSizeDisplay" style="color: var(--text-2); font-family: var(--mono);">-</strong></div>
+                <div>Ditampilkan: <strong id="siteLogCountDisplay" style="color: var(--text-2); font-family: var(--mono);">-</strong></div>
+                <div>Pembaruan: <span id="siteLogUpdatedDisplay" style="color: var(--text-2); font-family: var(--mono);">-</span></div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnLogScrollBottom" onclick="scrollSiteLogToBottom()">Ke Bawah</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="closeSiteLogModal()">Tutup</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+var currentLogSiteId = null;
+var currentLogDomain = '';
+var currentLogType = 'access';
+var logRefreshInterval = null;
+var isLogAutoRefreshActive = true;
+var isFetchingLogs = false;
+
+function openSiteLogModal(siteId, domain) {
+    currentLogSiteId = siteId;
+    currentLogDomain = domain;
+    currentLogType = 'access';
+    isLogAutoRefreshActive = true;
+
+    document.getElementById('siteLogDomainText').textContent = domain;
+    document.getElementById('siteLogPathDisplay').textContent = '/var/log/nginx/' + domain + '_access.log';
+    document.getElementById('siteLogContent').innerHTML = '<div style="color: #6b7280; padding: 30px 0; text-align: center;">Memuat log…</div>';
+    document.getElementById('siteLogSizeDisplay').textContent = '-';
+    document.getElementById('siteLogCountDisplay').textContent = '-';
+    document.getElementById('siteLogUpdatedDisplay').textContent = '-';
+
+    updateLogAutoRefreshUI();
+    switchSiteLogTab('access', false);
+
+    Almusa.openModal('siteLogModal');
+    fetchSiteLogs(true);
+    startLogAutoRefresh();
+}
+
+function closeSiteLogModal() {
+    stopLogAutoRefresh();
+    Almusa.closeModal('siteLogModal');
+    currentLogSiteId = null;
+}
+
+function switchSiteLogTab(type, doFetch) {
+    currentLogType = type;
+    document.getElementById('tabBtnLogAccess').classList.toggle('active', type === 'access');
+    document.getElementById('tabBtnLogError').classList.toggle('active', type === 'error');
+    document.getElementById('siteLogPathDisplay').textContent = '/var/log/nginx/' + currentLogDomain + '_' + type + '.log';
+
+    if (doFetch !== false) {
+        fetchSiteLogs(true);
+    }
+}
+
+function onSiteLogLinesChange() {
+    fetchSiteLogs(true);
+}
+
+function toggleLogAutoRefresh() {
+    isLogAutoRefreshActive = !isLogAutoRefreshActive;
+    updateLogAutoRefreshUI();
+    if (isLogAutoRefreshActive) {
+        startLogAutoRefresh();
+        fetchSiteLogs(false);
+    } else {
+        stopLogAutoRefresh();
+    }
+}
+
+function updateLogAutoRefreshUI() {
+    var dot = document.getElementById('logLiveDot');
+    var text = document.getElementById('logAutoRefreshText');
+    if (dot && text) {
+        if (isLogAutoRefreshActive) {
+            dot.className = 'live-dot live-active';
+            text.textContent = 'Auto-refresh (3s)';
+        } else {
+            dot.className = 'live-dot live-paused';
+            text.textContent = 'Auto-refresh: Pause';
+        }
+    }
+}
+
+function startLogAutoRefresh() {
+    stopLogAutoRefresh();
+    logRefreshInterval = setInterval(function () {
+        var modal = document.getElementById('siteLogModal');
+        if (!modal || !modal.classList.contains('show')) {
+            stopLogAutoRefresh();
+            return;
+        }
+        if (isLogAutoRefreshActive && currentLogSiteId) {
+            fetchSiteLogs(false);
+        }
+    }, 3000);
+}
+
+function stopLogAutoRefresh() {
+    if (logRefreshInterval) {
+        clearInterval(logRefreshInterval);
+        logRefreshInterval = null;
+    }
+}
+
+async function fetchSiteLogs(showSpinner) {
+    if (!currentLogSiteId || isFetchingLogs) return;
+    isFetchingLogs = true;
+
+    var loadingEl = document.getElementById('siteLogLoading');
+    if (showSpinner && loadingEl) {
+        loadingEl.style.display = 'flex';
+    }
+
+    var linesLimit = document.getElementById('siteLogLinesSelect').value || 50;
+
+    try {
+        var res = await Almusa.get('/api/sites/logs?site_id=' + currentLogSiteId + '&type=' + currentLogType + '&lines=' + linesLimit);
+        if (res.success) {
+            renderSiteLogLines(res);
+        } else {
+            document.getElementById('siteLogContent').innerHTML = '<div style="color: #f87171; padding: 30px 0; text-align: center;">Gagal memuat log: ' + Almusa.escapeHtml(res.error || 'Terjadi kesalahan') + '</div>';
+        }
+    } catch (e) {
+        console.error('Error fetching logs:', e);
+    } finally {
+        isFetchingLogs = false;
+        if (loadingEl) {
+            loadingEl.style.display = 'none';
+        }
+    }
+}
+
+function renderSiteLogLines(data) {
+    document.getElementById('siteLogSizeDisplay').textContent = data.size_human || '0 B';
+    document.getElementById('siteLogCountDisplay').textContent = (data.total_lines || 0) + ' baris';
+    document.getElementById('siteLogUpdatedDisplay').textContent = data.updated_at || '-';
+
+    var container = document.getElementById('siteLogContainer');
+    var contentEl = document.getElementById('siteLogContent');
+    
+    // Auto-scroll if user is already near bottom (within 60px)
+    var isAtBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) < 60;
+
+    if (!data.exists || !data.lines || data.lines.length === 0) {
+        contentEl.innerHTML = '<div style="color: #64748b; padding: 40px 0; text-align: center; font-style: italic;">Log ' + Almusa.escapeHtml(data.type) + ' kosong atau belum ada entri terbaru.</div>';
+        return;
+    }
+
+    var html = '';
+    var lines = data.lines;
+    for (var i = 0; i < lines.length; i++) {
+        var raw = lines[i];
+        html += '<div style="padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); display: flex; gap: 12px; font-family: ui-monospace, Consolas, monospace;">'
+              + '<span style="color: #475569; user-select: none; width: 34px; text-align: right; flex-shrink: 0; font-size: 11px;">' + (i + 1) + '</span>'
+              + '<span style="flex: 1; word-break: break-all;">' + formatLogLine(raw, data.type) + '</span>'
+              + '</div>';
+    }
+
+    contentEl.innerHTML = html;
+
+    if (isAtBottom) {
+        scrollSiteLogToBottom();
+    }
+}
+
+function formatLogLine(raw, type) {
+    var escaped = Almusa.escapeHtml(raw);
+    if (type === 'access') {
+        // Highlight HTTP method and status codes
+        escaped = escaped.replace(/ ("GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH) /g, ' <strong style="color:#38bdf8;">$1</strong> ')
+                         .replace(/ (2\d\d) /g, ' <span style="color:#4ade80; font-weight:600;">$1</span> ')
+                         .replace(/ (3\d\d) /g, ' <span style="color:#38bdf8; font-weight:600;">$1</span> ')
+                         .replace(/ (4\d\d) /g, ' <span style="color:#fb923c; font-weight:600;">$1</span> ')
+                         .replace(/ (5\d\d) /g, ' <span style="color:#f87171; font-weight:700;">$1</span> ');
+    } else {
+        // Highlight error log levels
+        escaped = escaped.replace(/\[(error|emerg|alert|crit)\]/gi, '<strong style="color:#f87171;">[$1]</strong>')
+                         .replace(/\[(warn|warning)\]/gi, '<strong style="color:#facc15;">[$1]</strong>')
+                         .replace(/\[(notice|info)\]/gi, '<strong style="color:#38bdf8;">[$1]</strong>');
+    }
+    return escaped;
+}
+
+function scrollSiteLogToBottom() {
+    var container = document.getElementById('siteLogContainer');
+    if (container) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+async function clearSiteLogs() {
+    if (!currentLogSiteId) return;
+
+    var ok = await Almusa.confirm({
+        title: 'Kosongkan File Log',
+        message: 'Apakah Anda yakin ingin mengosongkan log ' + currentLogType.toUpperCase() + ' untuk domain ' + currentLogDomain + '?\nData riwayat log yang dihapus tidak dapat dipulihkan.',
+        confirmText: 'Kosongkan Sekarang',
+        danger: true
+    });
+    if (!ok) return;
+
+    var btn = document.getElementById('btnLogClear');
+    var restore = Almusa.busy(btn, 'Mengosongkan…');
+
+    try {
+        var res = await Almusa.post('/api/sites/clear-log', {
+            site_id: currentLogSiteId,
+            type: currentLogType
+        });
+        if (res.success) {
+            Almusa.toast(res.message || 'Log berhasil dikosongkan.', 'success');
+            setTimeout(function () {
+                fetchSiteLogs(true);
+            }, 600);
+        } else {
+            Almusa.toast(res.error || 'Gagal mengosongkan log.', 'error');
+        }
+    } catch (e) {
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+    } finally {
         restore();
     }
 }

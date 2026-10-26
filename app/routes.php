@@ -33,6 +33,8 @@ Router::post('/api/sites/issue-ssl', [SiteController::class, 'issueSsl']);
 Router::post('/api/sites/disable-ssl', [SiteController::class, 'disableSsl']);
 Router::post('/api/sites/renew-ssl', [SiteController::class, 'renewSsl']);
 Router::get('/api/sites/ssl-status', [SiteController::class, 'sslStatus']);
+Router::get('/api/sites/logs', [SiteController::class, 'getLogs']);
+Router::post('/api/sites/clear-log', [SiteController::class, 'clearLog']);
 
 // File Manager & Config Editor
 Router::get('/sites/files', [FileManagerController::class, 'index']);

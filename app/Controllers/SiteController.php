@@ -379,4 +379,170 @@ class SiteController
             'details'     => $details,
         ]);
     }
+
+    /**
+     * API: Get realtime access or error log for a website
+     */
+    public function getLogs(): void
+    {
+        $siteId = (int)($_GET['site_id'] ?? 0);
+        $type = ($_GET['type'] ?? 'access') === 'error' ? 'error' : 'access';
+        $limit = max(10, min(500, (int)($_GET['lines'] ?? 50)));
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $domain = $site['domain'];
+        $logPath = "/var/log/nginx/{$domain}_{$type}.log";
+
+        if (!file_exists($logPath)) {
+            Response::json([
+                'success'     => true,
+                'domain'      => $domain,
+                'type'        => $type,
+                'file'        => $logPath,
+                'exists'      => false,
+                'size'        => 0,
+                'size_human'  => '0 B',
+                'lines'       => [],
+                'total_lines' => 0,
+                'updated_at'  => date('Y-m-d H:i:s'),
+            ]);
+            return;
+        }
+
+        $size = filesize($logPath);
+        $sizeHuman = $this->formatBytes($size);
+
+        // Read last $limit lines
+        $lines = $this->readTailLines($logPath, $limit);
+
+        Response::json([
+            'success'     => true,
+            'domain'      => $domain,
+            'type'        => $type,
+            'file'        => $logPath,
+            'exists'      => true,
+            'size'        => $size,
+            'size_human'  => $sizeHuman,
+            'lines'       => $lines,
+            'total_lines' => count($lines),
+            'updated_at'  => date('Y-m-d H:i:s', filemtime($logPath) ?: time()),
+        ]);
+    }
+
+    /**
+     * API: Clear access or error log for a website
+     */
+    public function clearLog(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $type = trim($_POST['type'] ?? 'access'); // 'access', 'error', 'all'
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $domain = $site['domain'];
+        $accessLog = "/var/log/nginx/{$domain}_access.log";
+        $errorLog = "/var/log/nginx/{$domain}_error.log";
+
+        $cleared = false;
+
+        // Try direct truncate first if writable
+        if ($type === 'access' || $type === 'all') {
+            if (file_exists($accessLog) && is_writable($accessLog)) {
+                @file_put_contents($accessLog, '');
+                $cleared = true;
+            }
+        }
+        if ($type === 'error' || $type === 'all') {
+            if (file_exists($errorLog) && is_writable($errorLog)) {
+                @file_put_contents($errorLog, '');
+                $cleared = true;
+            }
+        }
+
+        // If not writable by www-data/afandi, enqueue background task for root daemon
+        if (!$cleared) {
+            $task = $pdo->prepare("
+                INSERT INTO tasks (title, action, payload, status)
+                VALUES (:title, 'site_clear_log', :payload, 'pending')
+            ");
+            $task->execute([
+                ':title'   => "Bersihkan Log ({$type}): {$domain}",
+                ':payload' => json_encode([
+                    'domain' => $domain,
+                    'type'   => $type,
+                ]),
+            ]);
+        }
+
+        Response::json([
+            'success' => true,
+            'message' => "Log {$type} untuk {$domain} berhasil dibersihkan.",
+        ]);
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes >= 1073741824) {
+            return number_format($bytes / 1073741824, 2) . ' GB';
+        }
+        if ($bytes >= 1048576) {
+            return number_format($bytes / 1048576, 2) . ' MB';
+        }
+        if ($bytes >= 1024) {
+            return number_format($bytes / 1024, 1) . ' KB';
+        }
+        return $bytes . ' B';
+    }
+
+    private function readTailLines(string $filePath, int $lines = 50): array
+    {
+        if (!file_exists($filePath) || filesize($filePath) === 0) {
+            return [];
+        }
+
+        $f = @fopen($filePath, 'rb');
+        if (!$f) {
+            return [];
+        }
+
+        $buffer = '';
+        $lineList = [];
+        $chunkSize = 4096;
+        $fileSize = filesize($filePath);
+        $offset = $fileSize;
+
+        while ($offset > 0 && count($lineList) <= $lines) {
+            $seek = max(0, $offset - $chunkSize);
+            $readSize = $offset - $seek;
+            fseek($f, $seek);
+            $chunk = fread($f, $readSize);
+            $buffer = $chunk . $buffer;
+            $offset = $seek;
+
+            $parts = explode("\n", $buffer);
+            if ($offset > 0) {
+                $buffer = array_shift($parts);
+            }
+            $lineList = $parts;
+        }
+        fclose($f);
+
+        $lineList = array_filter($lineList, static fn($l) => trim($l) !== '');
+        return array_values(array_slice($lineList, -$lines));
+    }
 }

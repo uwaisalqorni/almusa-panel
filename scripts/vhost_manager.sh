@@ -218,8 +218,20 @@ EOF
         esac
         ;;
 
+    clear_log)
+        TYPE="${3:-all}"
+        echo "[INFO] Clearing $TYPE log for $DOMAIN..."
+        if [ "$TYPE" = "access" ] || [ "$TYPE" = "all" ]; then
+            [ -f "/var/log/nginx/${DOMAIN}_access.log" ] && > "/var/log/nginx/${DOMAIN}_access.log"
+        fi
+        if [ "$TYPE" = "error" ] || [ "$TYPE" = "all" ]; then
+            [ -f "/var/log/nginx/${DOMAIN}_error.log" ] && > "/var/log/nginx/${DOMAIN}_error.log"
+        fi
+        echo "[SUCCESS] Logs cleared for $DOMAIN."
+        ;;
+
     *)
-        echo "Usage: $0 {create|switch_php|delete|save_conf|fix_permissions} <domain> [docroot/src_file] [php_ver] [rewrite]"
+        echo "Usage: $0 {create|switch_php|delete|save_conf|fix_permissions|clear_log} <domain> [docroot/src_file] [php_ver] [rewrite]"
         exit 1
         ;;
 esac

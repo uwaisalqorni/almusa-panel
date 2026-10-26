@@ -120,14 +120,18 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Pengujian sintaks salah sengaja (broken syntax) berhasil dicegah oleh Safety Guard, otomatis di-rollback ke konfigurasi sebelumnya, dan Nginx tetap berjalan tanpa downtime.
 
 ### Langkah 2.5: Log Viewer Realtime per Website
-- [ ] **Tugas:**
-  - Tambahkan modal "Lihat Log" pada setiap website di menu `/sites`.
-  - Menampilkan 50 baris terakhir dari:
-    - `/var/log/nginx/{domain}_access.log`
-    - `/var/log/nginx/{domain}_error.log`
-  - Tombol auto-refresh dan tombol bersihkan log.
-- [ ] **Verifikasi:**
-  - Munculkan error 404/500 buatan pada website target, log langsung terbaca di modal panel.
+- [x] **Tugas:**
+  - [x] Tambahkan tombol & modal "Lihat Log" pada setiap website di menu `/sites`.
+  - [x] Menampilkan 50, 100, 200, atau 500 baris terakhir dari:
+    - `/var/log/nginx/{domain}_access.log` (Access Log dengan pewarnaan status HTTP 2xx hijau, 3xx cyan, 4xx oranye, 5xx merah)
+    - `/var/log/nginx/{domain}_error.log` (Error Log dengan penandaan level [error], [warn], [notice])
+  - [x] Fitur Auto-refresh realtime (polling cerdas tiap 3 detik dengan indikator lampu berkedip dan auto-scroll pintar).
+  - [x] Fitur Bersihkan Log (truncate file log secara aman via task queue worker / direct truncate).
+  - [x] Antarmuka console bergaya dark/terminal dengan font monospace, ukuran file, jumlah baris, dan penunjuk waktu update.
+- [x] **Verifikasi:**
+  - [x] Endpoint API `/api/sites/logs` dan `/api/sites/clear-log` berhasil merespons data log dalam format JSON.
+  - [x] Simulasi request 404 (`GET /test-realtime-log-viewer-404-check`) pada `http://127.0.0.1:8088/` (Host: bidan-okta) terdeteksi secara instan di log viewer panel.
+  - [x] Pengujian fitur "Kosongkan" berhasil mengosongkan log menjadi 0 bytes, dan request baru setelahnya langsung tercatat kembali secara realtime.
 
 ---
 
