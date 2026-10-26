@@ -88,6 +88,7 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Akses tanpa login ke `/adminer/` langsung ditolak dengan status 403 Forbidden dan tampilan kartu peringatan Almusa.
   - [x] Klik tombol "Kelola Data" pada database menghasilkan token SSO sekali pakai, membuka Adminer di tab baru, dan langsung terotentikasi ke database bersangkutan tanpa meminta password.
   - [x] Akses langsung ke `/adminer/` bagi admin yang sudah login otomatis menghubungkan sesi root/aktif dengan tombol kembali `← Almusa Panel`.
+  - [x] Penyempurnaan styling dark theme modern (mengatasi kotak input putih tanpa atribut `type`, penataan tabel kolom, badge partition, hiding versi mentah, dan dynamic cache busting `?v={filemtime}`).
 
 ### Langkah 2.3: Let's Encrypt / Certbot 1-Click SSL
 - [ ] **Tugas:**
