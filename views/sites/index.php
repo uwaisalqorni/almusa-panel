@@ -88,6 +88,12 @@ $rewriteLabels = [
                         </td>
                         <td>
                             <div class="cell-actions">
+                                <a href="/sites/files?site_id=<?= (int)$site['id'] ?>" class="btn btn-secondary btn-sm" title="Buka File Manager">
+                                    <?= ui_icon('folder') ?> Files
+                                </a>
+                                <a href="/sites/files?site_id=<?= (int)$site['id'] ?>&edit=nginx" class="btn btn-ghost btn-icon btn-sm" title="Edit Konfigurasi Nginx" aria-label="Nginx Conf">
+                                    <?= ui_icon('sliders') ?>
+                                </a>
                                 <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Hapus website" aria-label="Hapus <?= e($site['domain']) ?>"
                                         onclick="openDeleteSiteModal(<?= (int)$site['id'] ?>, <?= js_arg($site['domain']) ?>, <?= js_arg($site['docroot']) ?>)">
                                     <?= ui_icon('trash') ?>

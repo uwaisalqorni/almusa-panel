@@ -8,6 +8,7 @@ use App\Controllers\DatabaseController;
 use App\Controllers\PluginController;
 use App\Controllers\TunnelController;
 use App\Controllers\TaskController;
+use App\Controllers\FileManagerController;
 
 // Auth routes
 Router::get('/login', [AuthController::class, 'showLogin']);
@@ -27,6 +28,17 @@ Router::get('/sites', [SiteController::class, 'index']);
 Router::post('/api/sites/create', [SiteController::class, 'create']);
 Router::post('/api/sites/switch-php', [SiteController::class, 'switchPhp']);
 Router::post('/api/sites/delete', [SiteController::class, 'delete']);
+
+// File Manager & Config Editor
+Router::get('/sites/files', [FileManagerController::class, 'index']);
+Router::get('/api/files/list', [FileManagerController::class, 'listFiles']);
+Router::get('/api/files/read', [FileManagerController::class, 'readFile']);
+Router::post('/api/files/save', [FileManagerController::class, 'saveFile']);
+Router::post('/api/files/create', [FileManagerController::class, 'createItem']);
+Router::post('/api/files/delete', [FileManagerController::class, 'deleteItem']);
+Router::post('/api/files/upload', [FileManagerController::class, 'uploadFile']);
+Router::post('/api/files/extract', [FileManagerController::class, 'extractZip']);
+Router::get('/api/files/download', [FileManagerController::class, 'downloadFile']);
 
 // Databases
 Router::get('/databases', [DatabaseController::class, 'index']);

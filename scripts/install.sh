@@ -192,6 +192,13 @@ if [ -f /www/panel/config/cloudflare-realip.conf ]; then
     ln -sf /www/panel/config/cloudflare-realip.conf /etc/nginx/conf.d/cloudflare-realip.conf
 fi
 
+# Hak eksekusi vhost_manager.sh untuk user worker/panel tanpa password
+PANEL_USER=$(stat -c '%U' /www/panel 2>/dev/null || echo "afandi")
+if [ "$PANEL_USER" != "root" ]; then
+    echo "${PANEL_USER} ALL=(ALL) NOPASSWD: /www/panel/scripts/vhost_manager.sh, $(readlink -f /www/panel)/scripts/vhost_manager.sh" > /etc/sudoers.d/almusa-panel
+    chmod 0440 /etc/sudoers.d/almusa-panel
+fi
+
 # Daftarkan dedicated PHP-FPM service untuk panel
 cat << EOF > /etc/systemd/system/mypanel-web.service
 [Unit]

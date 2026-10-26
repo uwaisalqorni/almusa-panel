@@ -180,6 +180,19 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             if (!file_exists($script)) return null;
             return "bash " . escapeshellarg($script) . " switch_php " . escapeshellarg($domain) . " " . escapeshellarg($phpVer);
 
+        case 'vhost_save_conf':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $srcFile = (string)($payload['src_file'] ?? '');
+            $script = "{$root}/scripts/vhost_manager.sh";
+            if (!file_exists($script) || !file_exists($srcFile)) return null;
+            return "bash " . escapeshellarg($script) . " save_conf " . escapeshellarg($domain) . " " . escapeshellarg($srcFile);
+
+        case 'fix_permissions':
+            $targetPath = (string)($payload['path'] ?? '');
+            $script = "{$root}/scripts/vhost_manager.sh";
+            if (!file_exists($script) || empty($targetPath)) return null;
+            return "bash " . escapeshellarg($script) . " fix_permissions _ " . escapeshellarg($targetPath);
+
         case 'tunnel_quick_start':
             $siteId = (int)($payload['site_id'] ?? 0);
             $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));

@@ -10,6 +10,7 @@ $nav = [
     'Utama' => [
         ['/dashboard', 'Dashboard', 'dashboard'],
         ['/sites', 'Websites', 'globe'],
+        ['/sites/files', 'File Manager', 'folder'],
         ['/databases', 'Databases', 'database'],
     ],
     'Ekstensi & jaringan' => [
@@ -24,6 +25,9 @@ $nav = [
 $isActive = static function (string $href) use ($currentUri): bool {
     if ($href === '/dashboard') {
         return $currentUri === '/dashboard' || $currentUri === '/';
+    }
+    if ($href === '/sites') {
+        return $currentUri === '/sites';
     }
     return str_starts_with($currentUri, $href);
 };

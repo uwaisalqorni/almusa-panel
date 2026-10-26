@@ -162,8 +162,65 @@ EOF
         echo "[SUCCESS] Virtual Host for $DOMAIN removed."
         ;;
 
+    save_conf)
+        SRC_FILE="${3:-}"
+        echo "[INFO] Validating and applying Nginx configuration for $DOMAIN..."
+        if [ -z "$SRC_FILE" ] || [ ! -f "$SRC_FILE" ]; then
+            echo "[ERROR] Source configuration file '$SRC_FILE' does not exist."
+            exit 1
+        fi
+
+        BACKUP_FILE="${CONF_FILE}.bak"
+        TEST_FILE="${CONF_FILE}.test"
+        cp "$CONF_FILE" "$BACKUP_FILE" 2>/dev/null || true
+        cp "$SRC_FILE" "$TEST_FILE"
+
+        # Temporarily link test file and test nginx configuration
+        rm -f "$LINK_FILE"
+        ln -sf "$TEST_FILE" "$LINK_FILE"
+
+        if nginx -t; then
+            mv -f "$TEST_FILE" "$CONF_FILE"
+            ln -sf "$CONF_FILE" "$LINK_FILE"
+            rm -f "$BACKUP_FILE" "$SRC_FILE"
+            echo "[INFO] Reloading Nginx..."
+            systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
+            echo "[SUCCESS] Configuration for $DOMAIN successfully saved and reloaded!"
+        else
+            echo "[ERROR] Nginx configuration test failed! Rolling back changes..."
+            rm -f "$TEST_FILE"
+            if [ -f "$BACKUP_FILE" ]; then
+                mv -f "$BACKUP_FILE" "$CONF_FILE"
+                ln -sf "$CONF_FILE" "$LINK_FILE"
+            fi
+            exit 1
+        fi
+        ;;
+
+    fix_permissions)
+        TARGET_PATH="${3:-}"
+        echo "[INFO] Fixing permissions for $TARGET_PATH..."
+        if [ -z "$TARGET_PATH" ] || [ ! -e "$TARGET_PATH" ]; then
+            echo "[ERROR] Path '$TARGET_PATH' does not exist."
+            exit 1
+        fi
+        case "$TARGET_PATH" in
+            /www/wwwroot/*)
+                chown -R afandi:www-data "$TARGET_PATH" 2>/dev/null || chown -R www-data:www-data "$TARGET_PATH" 2>/dev/null || true
+                find "$TARGET_PATH" -type d -exec chmod 0755 {} + 2>/dev/null || true
+                find "$TARGET_PATH" -type f -exec chmod 0644 {} + 2>/dev/null || true
+                echo "[SUCCESS] Permissions set: directories 0755, files 0644, user afandi:www-data."
+                ;;
+            *)
+                echo "[ERROR] Refusing to modify permissions outside /www/wwwroot"
+                exit 1
+                ;;
+        esac
+        ;;
+
     *)
-        echo "Usage: $0 {create|switch_php|delete} <domain> [docroot] [php_ver] [rewrite]"
+        echo "Usage: $0 {create|switch_php|delete|save_conf|fix_permissions} <domain> [docroot/src_file] [php_ver] [rewrite]"
         exit 1
         ;;
 esac
+

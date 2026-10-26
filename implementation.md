@@ -65,15 +65,19 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
 > **Tujuan:** Mempermudah deployment dan pemeliharaan website tanpa harus login SSH ke terminal manual.
 
 ### Langkah 2.1: Web File Manager & Config Editor
-- [ ] **Tugas:**
-  - Tambahkan sub-menu atau modal "File Manager" pada baris website di `/sites`.
-  - Tampilkan struktur file di `/www/wwwroot/{domain}` dengan navigasi folder ringan.
-  - Fitur inti:
-    - **Editor Teks**: Mengedit file `.env`, `nginx.conf`, `index.php`, `.htaccess`.
-    - **Upload & Extract**: Unggah file zip dan ekstrak langsung di folder tujuan.
-    - **File Permissions**: Set kepemilikan otomatis `chown -R www-data:www-data` setelah extract.
-- [ ] **Verifikasi:**
-  - Buat file `.env` baru pada salah satu website dan simpan; verifikasi file tersimpan dengan benar di server.
+- [x] **Tugas:**
+  - [x] Tambahkan tombol dan navigasi "File Manager" pada baris website di `/sites` dan menu navigasi sidebar (`/sites/files`).
+  - [x] Tampilkan struktur file di `/www/wwwroot/{domain}` dengan navigasi folder ringan (breadcrumbs, pencarian realtime, icon berkas spesifik, ukuran, izin, tanggal).
+  - [x] Fitur inti:
+    - [x] **Editor Teks**: Mengedit file `.env`, `nginx.conf`, `index.php`, `.htaccess` lengkap dengan line numbering, indentasi Tab (4 spaces), deteksi sintaks, dan shortcut `Ctrl + S`.
+    - [x] **Proteksi Sintaks Nginx**: Pengujian `nginx -t` otomatis sebelum simpan; otomatis rollback jika sintaks salah dan tampilkan pesan error baris tanpa merusak web server.
+    - [x] **Upload & Extract**: Unggah berkas/banyak berkas dan drag & drop, serta ekstrak file `.zip` (dengan mitigasi Zip-Slip traversal).
+    - [x] **File Permissions**: Set kepemilikan dan hak akses otomatis (`chown -R afandi:www-data`, dir `0755`, file `0644`) setelah extract.
+- [x] **Verifikasi:**
+  - [x] Diuji dengan membuat file `.env.almusa_test`, menyimpan konten kustom, dan memverifikasi langsung di disk server (`/www/wwwroot/bidan-okta/.env.almusa_test`).
+  - [x] Diuji pengunggahan `test_archive.zip` dan ekstraksi otomatis dengan penyesuaian permission `0644` pada file dan `0755` pada direktori.
+  - [x] Diuji proteksi path traversal (`../../../../etc/passwd` menghasilkan 404 Access Denied).
+  - [x] Diuji validasi sintaks Nginx (sintaks invalid langsung ditolak dengan status 400 dan pesan error spesifik, konfigurasi asli tetap aman).
 
 ### Langkah 2.2: Database Web GUI (Embedded Adminer)
 - [ ] **Tugas:**

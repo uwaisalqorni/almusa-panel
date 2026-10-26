@@ -79,6 +79,21 @@
         }
     };
 
+    A.get = async function (url) {
+        try {
+            var res = await fetch(url, {
+                headers: { 'Accept': 'application/json' }
+            });
+            try {
+                return await res.json();
+            } catch (e) {
+                return { success: false, error: 'Respons server tidak valid (HTTP ' + res.status + ').' };
+            }
+        } catch (e) {
+            return { success: false, error: 'Tidak dapat terhubung ke server. Periksa koneksi Anda.' };
+        }
+    };
+
     /* ---------------------------------------------------------------- toast */
     function toastStack() {
         var stack = document.getElementById('toastStack');
