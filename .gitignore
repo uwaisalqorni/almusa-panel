@@ -2,6 +2,7 @@
 passroot-saya.md
 plan.md
 cf-token.md
+implementation.md
 
 # Runtime Panel Database & Generated Credentials
 data/panel.db
