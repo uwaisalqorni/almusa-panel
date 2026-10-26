@@ -239,6 +239,12 @@ var ACTIVE_EDITOR_FILE = null;
 var ACTIVE_EDITOR_IS_NGINX = false;
 var OPEN_EDIT_INITIAL = <?= json_encode((string)$openEdit) ?>;
 
+function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+}
+
 /* ----------------------------------------------------------------- NAVIGATION */
 function switchSite(siteId) {
     location.href = '/sites/files?site_id=' + siteId;
@@ -271,7 +277,7 @@ async function loadDirectory(path) {
         var res = await Almusa.get('/api/files/list?site_id=' + CURRENT_SITE_ID + '&path=' + encodeURIComponent(path));
         if (!res.success) {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--err);">' +
-                Almusa.escapeHtml(res.error || 'Gagal memuat direktori.') + '</td></tr>';
+                escapeHtml(res.error || 'Gagal memuat direktori.') + '</td></tr>';
             Almusa.toast(res.error || 'Gagal memuat direktori.', 'error');
             return;
         }
@@ -286,7 +292,9 @@ async function loadDirectory(path) {
         history.replaceState({ path: CURRENT_PATH }, '', newUrl);
 
     } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--err);">Kesalahan jaringan saat memuat direktori.</td></tr>';
+        console.error('loadDirectory error:', e);
+        var msg = (e && e.message) ? ('Kesalahan: ' + escapeHtml(e.message)) : 'Kesalahan jaringan saat memuat direktori.';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--err);">' + msg + '</td></tr>';
     }
 }
 
@@ -349,7 +357,7 @@ function renderTable(items) {
         var tdName = document.createElement('td');
         var nameWrap = document.createElement('span');
         nameWrap.className = 'fm-item-name';
-        nameWrap.innerHTML = getFileIcon(item) + '<span>' + Almusa.escapeHtml(item.name) + '</span>';
+        nameWrap.innerHTML = getFileIcon(item) + '<span>' + escapeHtml(item.name) + '</span>';
 
         if (item.is_dir) {
             nameWrap.onclick = function () { navigateToPath(item.path); };
@@ -371,7 +379,7 @@ function renderTable(items) {
 
         // 3. Perms
         var tdPerms = document.createElement('td');
-        tdPerms.innerHTML = '<code style="font-size:11px;">' + Almusa.escapeHtml(item.perms) + '</code>';
+        tdPerms.innerHTML = '<code style="font-size:11px;">' + escapeHtml(item.perms) + '</code>';
         tr.appendChild(tdPerms);
 
         // 4. Mtime
@@ -717,7 +725,7 @@ function renderSelectedFiles() {
     selectedFiles.forEach(function (f) {
         var item = document.createElement('div');
         item.style.cssText = 'display:flex;justify-content:space-between;padding:6px 10px;background:var(--surface-hover);border-radius:6px;margin-bottom:6px;font-size:12px;';
-        item.innerHTML = '<span class="truncate" style="max-width:280px;font-weight:500;">' + Almusa.escapeHtml(f.name) + '</span>' +
+        item.innerHTML = '<span class="truncate" style="max-width:280px;font-weight:500;">' + escapeHtml(f.name) + '</span>' +
             '<span class="mono text-muted">' + (f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' MB' : (f.size / 1024).toFixed(1) + ' KB') + '</span>';
         list.appendChild(item);
     });

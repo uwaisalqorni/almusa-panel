@@ -47,10 +47,11 @@
     }
 
     function escapeHtml(s) {
-        return String(s).replace(/[&<>"']/g, function (c) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
         });
     }
+    A.escapeHtml = escapeHtml;
 
     /* ----------------------------------------------------------------- HTTP */
     A.post = async function (url, data) {
