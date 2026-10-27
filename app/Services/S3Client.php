@@ -150,6 +150,60 @@ class S3Client
     }
 
     /**
+     * Download remote file from bucket to local destination
+     */
+    public function downloadFile(string $remoteKey, string $localDestination): array
+    {
+        $remoteKey = ltrim($remoteKey, '/');
+        $path = '/' . rawurlencode($this->bucket) . '/' . self::encodePath($remoteKey);
+
+        $dir = dirname($localDestination);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+
+        $fp = @fopen($localDestination, 'w+');
+        if (!$fp) {
+            return ['success' => false, 'error' => "Tidak dapat membuka destinasi file lokal: {$localDestination}"];
+        }
+
+        $payloadHash = hash('sha256', '');
+        $headers = $this->buildAuthHeaders('GET', $path, [], $payloadHash, []);
+        $url = $this->scheme . '://' . $this->host . $path;
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_FILE, $fp);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+
+        $curlHeaders = [];
+        foreach ($headers as $k => $v) {
+            $curlHeaders[] = "{$k}: {$v}";
+        }
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $curlHeaders);
+
+        $exec = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        fclose($fp);
+
+        if ($exec === false || $status < 200 || $status >= 300) {
+            @unlink($localDestination);
+            return [
+                'success' => false,
+                'error'   => "Gagal mengunduh file dari cloud (HTTP {$status}): " . ($err ?: 'File tidak ditemukan atau akses ditolak.'),
+                'status'  => $status,
+            ];
+        }
+
+        return ['success' => true, 'path' => $localDestination];
+    }
+
+    /**
      * Helper to encode path segments preserving slashes
      */
     private static function encodePath(string $path): string

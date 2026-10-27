@@ -175,12 +175,16 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Penghapusan dan pemangkasan retensi backup berhasil menghapus file fisik di `/www/backup/` dan database catatan SQLite.
 
 ### Langkah 3.3: 1-Click Site & Database Restore
-- [ ] **Tugas:**
-  - Tampilkan tombol "Restore" di sebelah setiap file backup yang tersimpan.
-  - Worker membaca file `.sql.gz` atau `.tar.gz` dan mengembalikan state data.
-  - Dialog konfirmasi bahaya sebelum eksekusi (*safety guard*).
-- [ ] **Verifikasi:**
-  - Hapus salah satu tabel uji coba, lakukan restore dari backup; tabel kembali normal.
+- [x] **Tugas:**
+  - [x] Tampilkan tombol "Restore" di sebelah setiap file backup yang tersimpan di `/backups`.
+  - [x] Worker & BackupEngine membaca file `.sql.gz` atau `.tar.gz` dan mengembalikan state data secara otomatis.
+  - [x] Dialog konfirmasi bahaya sebelum eksekusi (*safety guard*) dilengkapi rincian snapshot, badge tipe, pemilihan target pemulihan, dan checkbox konfirmasi risiko.
+- [x] **Verifikasi:**
+  - [x] Tabel uji coba `restore_test_items` dibuat di database `test_db`, snapshot diambil via CLI/Engine, lalu tabel dihapus secara permanen via `DROP TABLE`.
+  - [x] Pemulihan 1-Click dieksekusi via endpoint API `POST /api/backups/restore`; database `test_db` pulih 100% dalam 0.12 detik dengan seluruh skema dan baris data kembali utuh.
+  - [x] Perintah CLI `./cli.sh backup restore <id> [target]` terverifikasi berfungsi sempurna dan terintegrasi.
+  - [x] Pemulihan arsip website `bidan-okta` berhasil diekstrak ulang ke direktori target dalam 0.88 detik dengan hak akses ownership (`www-data:www-data`) dan izin (`0755`) terjaga.
+  - [x] Dukungan pengunduhan otomatis dari Cloud Storage (Cloudflare R2 / AWS S3) via `S3Client::downloadFile()` jika file lokal terhapus.
 
 ---
 

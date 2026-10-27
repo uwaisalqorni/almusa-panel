@@ -88,6 +88,7 @@ Router::post('/api/cron/clear-logs', [CronController::class, 'clearLogs']);
 // Backups & Snapshots Engine
 Router::get('/backups', [BackupController::class, 'index']);
 Router::post('/api/backups/create', [BackupController::class, 'create']);
+Router::post('/api/backups/restore', [BackupController::class, 'restore']);
 Router::post('/api/backups/delete', [BackupController::class, 'delete']);
 Router::get('/api/backups/download', [BackupController::class, 'download']);
 Router::post('/api/backups/sync-cloud', [BackupController::class, 'syncCloud']);

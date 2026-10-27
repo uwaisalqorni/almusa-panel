@@ -486,11 +486,11 @@
 <!-- MODAL 4: KONFIRMASI RESTORE (SAFETY GUARD)                               -->
 <!-- ========================================================================= -->
 <div class="modal-backdrop" id="restoreModal">
-    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="restoreModalTitle">
+    <div class="modal" style="max-width: 520px;" role="dialog" aria-modal="true" aria-labelledby="restoreModalTitle">
         <div class="modal-header">
             <div>
-                <h2 class="modal-title" id="restoreModalTitle">Pemulihan Data (Restore)</h2>
-                <p class="modal-subtitle">Pulihkan database atau berkas situs dari snapshot.</p>
+                <h2 class="modal-title" id="restoreModalTitle">Pemulihan Data (1-Click Restore)</h2>
+                <p class="modal-subtitle">Pulihkan database atau berkas situs dari snapshot cadangan.</p>
             </div>
             <button type="button" class="icon-btn" onclick="Almusa.closeModal('restoreModal')" aria-label="Tutup"><?= ui_icon('x') ?></button>
         </div>
@@ -498,7 +498,7 @@
         <div class="modal-body">
             <div class="callout-danger" style="margin-bottom: 14px;">
                 <div style="font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
-                    <?= ui_icon('alert-triangle') ?> Peringatan Keselamatan Data
+                    <?= ui_icon('alert-triangle') ?> Peringatan Bahaya & Keselamatan Data
                 </div>
                 <div style="font-size: 12.5px; line-height: 1.45;">
                     Pemulihan ini akan <strong>menimpa data atau berkas aktif saat ini</strong> dengan salinan yang ada di dalam snapshot arsip. Tindakan ini tidak dapat dibatalkan.
@@ -506,21 +506,36 @@
             </div>
 
             <div style="background: var(--surface-2); padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); font-size: 12.5px;">
-                <div><span class="text-3">Target:</span> <strong id="restoreTargetName">--</strong></div>
-                <div style="margin-top: 4px;"><span class="text-3">Berkas:</span> <code id="restoreFileName" style="font-size: 11px;">--</code></div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <div><span class="text-3">Snapshot:</span> <strong id="restoreTargetName">--</strong></div>
+                    <span id="restoreTypeBadge" class="badge">--</span>
+                </div>
+                <div style="margin-top: 4px;"><span class="text-3">Berkas:</span> <code id="restoreFileName" style="font-size: 11px; word-break: break-all;">--</code></div>
                 <div style="margin-top: 4px;"><span class="text-3">Ukuran:</span> <span id="restoreFileSize" class="num">--</span></div>
             </div>
 
-            <label class="check" style="margin-top: 14px;">
-                <input type="checkbox" id="chkRestoreConfirm" onchange="document.getElementById('btnDoRestore').disabled = !this.checked">
-                <span style="font-size: 12.5px;">Saya memahami risiko dan setuju untuk menimpa state target saat ini.</span>
+            <div class="form-group" style="margin-top: 14px;">
+                <label class="form-label" for="restoreTargetSelect" id="restoreTargetLabel">Target Pemulihan</label>
+                <div id="restoreTargetContainer">
+                    <input type="text" id="restoreTargetSelect" class="form-control" readonly>
+                </div>
+                <span class="form-help" id="restoreTargetHelp">Data akan dikembalikan ke target di atas.</span>
+            </div>
+
+            <div id="restoreAlertBox" style="display: none; margin-top: 12px;" class="callout-danger">
+                <div id="restoreAlertText" style="font-size: 12px; line-height: 1.4;"></div>
+            </div>
+
+            <label class="check" style="margin-top: 14px; display: flex; align-items: flex-start; gap: 8px;">
+                <input type="checkbox" id="chkRestoreConfirm" onchange="document.getElementById('btnDoRestore').disabled = !this.checked" style="margin-top: 2px;">
+                <span style="font-size: 12.5px; color: var(--text);">Saya telah memeriksa target di atas, memahami risiko dan menyetujui penimpaan state data aktif.</span>
             </label>
         </div>
 
         <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="Almusa.closeModal('restoreModal')">Batal</button>
             <button type="button" class="btn btn-danger-solid" id="btnDoRestore" disabled onclick="executeRestore()">
-                <?= ui_icon('refresh') ?> Mulai Restore
+                <?= ui_icon('refresh') ?> Mulai Pemulihan (Restore)
             </button>
         </div>
     </div>
@@ -817,18 +832,143 @@ async function submitScheduleConfig(e) {
 
 // Restore Modal
 var currentRestoreBackup = null;
+const availableMysqlDbs = <?= json_encode(array_values(array_unique($mysqlDbs))) ?>;
+const availableSites = <?= json_encode(array_values(array_column($sites, 'domain'))) ?>;
+
 function openRestoreModal(backup) {
     currentRestoreBackup = backup;
     document.getElementById('restoreTargetName').textContent = backup.name;
     document.getElementById('restoreFileName').textContent = backup.filename;
-    document.getElementById('restoreFileSize').textContent = backup.filesize_h;
+    document.getElementById('restoreFileSize').textContent = backup.filesize_h || Almusa.formatBytes(backup.filesize);
+
+    var badge = document.getElementById('restoreTypeBadge');
+    if (badge) {
+        badge.className = 'badge ' + (backup.type === 'database' ? 'badge-info' : 'badge-accent');
+        badge.textContent = backup.type.toUpperCase();
+    }
+
+    var container = document.getElementById('restoreTargetContainer');
+    var label = document.getElementById('restoreTargetLabel');
+    var help = document.getElementById('restoreTargetHelp');
+    container.innerHTML = '';
+
+    if (backup.type === 'database') {
+        if (backup.target === 'all_databases' || backup.filename.indexOf('db_all_databases_') === 0) {
+            label.textContent = 'Target Database';
+            container.innerHTML = '<input type="text" id="restoreTargetSelect" class="form-control" value="Semua Database (Full Dump / Auto)" readonly style="background: var(--surface-3);">';
+            help.textContent = 'Seluruh database di dalam snapshot akan dipulihkan secara otomatis ke server MySQL.';
+        } else {
+            label.textContent = 'Database Tujuan';
+            var select = document.createElement('select');
+            select.id = 'restoreTargetSelect';
+            select.className = 'form-control';
+
+            // Add original database first
+            var optOrig = document.createElement('option');
+            optOrig.value = backup.target;
+            optOrig.textContent = backup.target + ' (Target Asli)';
+            optOrig.selected = true;
+            select.appendChild(optOrig);
+
+            // Add other available databases
+            availableMysqlDbs.forEach(function(db) {
+                if (db !== backup.target) {
+                    var opt = document.createElement('option');
+                    opt.value = db;
+                    opt.textContent = db;
+                    select.appendChild(opt);
+                }
+            });
+
+            container.appendChild(select);
+            help.textContent = 'Tabel dan isi database terpilih akan ditimpa dengan snapshot ini.';
+        }
+    } else {
+        if (backup.target === 'all_websites' || backup.filename.indexOf('site_all_websites_') === 0) {
+            label.textContent = 'Website Tujuan';
+            container.innerHTML = '<input type="text" id="restoreTargetSelect" class="form-control" value="Semua Website (/www/wwwroot)" readonly style="background: var(--surface-3);">';
+            help.textContent = 'Seluruh direktori website di /www/wwwroot akan dipulihkan dari arsip snapshot.';
+        } else {
+            label.textContent = 'Website Tujuan';
+            var select = document.createElement('select');
+            select.id = 'restoreTargetSelect';
+            select.className = 'form-control';
+
+            // Add original site first
+            var optOrig = document.createElement('option');
+            optOrig.value = backup.target;
+            optOrig.textContent = backup.target + ' (Target Asli)';
+            optOrig.selected = true;
+            select.appendChild(optOrig);
+
+            // Add other available sites
+            availableSites.forEach(function(s) {
+                if (s !== backup.target) {
+                    var opt = document.createElement('option');
+                    opt.value = s;
+                    opt.textContent = s;
+                    select.appendChild(opt);
+                }
+            });
+
+            container.appendChild(select);
+            help.textContent = 'Berkas di direktori website target akan ditimpa dengan isi dari arsip snapshot.';
+        }
+    }
+
+    var alertBox = document.getElementById('restoreAlertBox');
+    if (alertBox) alertBox.style.display = 'none';
+
     document.getElementById('chkRestoreConfirm').checked = false;
     document.getElementById('btnDoRestore').disabled = true;
     Almusa.openModal('restoreModal');
 }
 
-function executeRestore() {
-    Almusa.toast('Fitur 1-Click Restore siap dikonfigurasi pada Langkah 3.3.', 'info');
-    Almusa.closeModal('restoreModal');
+async function executeRestore() {
+    if (!currentRestoreBackup) return;
+    var btn = document.getElementById('btnDoRestore');
+    var chk = document.getElementById('chkRestoreConfirm');
+    if (!chk.checked) return;
+
+    var targetEl = document.getElementById('restoreTargetSelect');
+    var target = targetEl ? targetEl.value : '';
+
+    var alertBox = document.getElementById('restoreAlertBox');
+    var alertText = document.getElementById('restoreAlertText');
+    if (alertBox) alertBox.style.display = 'none';
+
+    Almusa.busy(btn, 'Memulihkan data...');
+    chk.disabled = true;
+
+    try {
+        var res = await Almusa.post('/api/backups/restore', {
+            id: currentRestoreBackup.id,
+            target: target
+        });
+
+        if (res.success) {
+            Almusa.toast(res.message || 'Pemulihan data berhasil!', 'success');
+            Almusa.closeModal('restoreModal');
+            setTimeout(function() {
+                location.reload();
+            }, 1200);
+        } else {
+            Almusa.unbusy(btn);
+            chk.disabled = false;
+            if (alertText && alertBox) {
+                alertText.textContent = res.error || 'Terjadi kesalahan saat memulihkan snapshot.';
+                alertBox.style.display = 'block';
+            }
+            Almusa.toast(res.error || 'Gagal memulihkan snapshot data.', 'error');
+        }
+    } catch (err) {
+        Almusa.unbusy(btn);
+        chk.disabled = false;
+        if (alertText && alertBox) {
+            alertText.textContent = err.message || 'Terjadi gangguan koneksi jaringan.';
+            alertBox.style.display = 'block';
+        }
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+    }
 }
 </script>

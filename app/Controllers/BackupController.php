@@ -212,6 +212,31 @@ class BackupController
     }
 
     /**
+     * Restore database or site snapshot (1-Click Restore)
+     */
+    public function restore(): void
+    {
+        $id = (int)($_POST['id'] ?? 0);
+        $target = trim($_POST['target'] ?? '');
+
+        if ($id <= 0) {
+            Response::json(['success' => false, 'error' => 'ID snapshot backup tidak valid.'], 400);
+            return;
+        }
+
+        try {
+            $res = BackupEngine::restoreBackup($id, $target ?: null);
+            if ($res['success']) {
+                Response::json($res);
+            } else {
+                Response::json(['success' => false, 'error' => $res['error'] ?? 'Gagal memulihkan snapshot.'], 500);
+            }
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'error' => 'Pengecualian sistem: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Sync existing local backup to Cloudflare R2 / AWS S3
      */
     public function syncCloud(): void

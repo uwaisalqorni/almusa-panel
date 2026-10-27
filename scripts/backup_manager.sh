@@ -143,6 +143,7 @@ case "$ACTION" in
         ;;
 
     restore_db)
+        set -o pipefail
         BACKUP_FILE="${2:-}"
         TARGET_DB="${3:-}"
 
@@ -151,20 +152,35 @@ case "$ACTION" in
             exit 1
         fi
 
-        if [ -z "$TARGET_DB" ]; then
-            echo "[ERROR] Target database is required."
-            exit 1
-        fi
-
-        echo "[INFO] Restoring database '${TARGET_DB}' from '${BACKUP_FILE}'..."
         export MYSQL_PWD="$MYSQL_ROOT_PASS"
-        # Ensure database exists
-        mysql -u root -e "CREATE DATABASE IF NOT EXISTS \`$TARGET_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-        gzip -dc "$BACKUP_FILE" | mysql -u root "$TARGET_DB"
-        echo "[SUCCESS] Database '${TARGET_DB}' restored successfully from '${BACKUP_FILE}'!"
+        FILENAME=$(basename "$BACKUP_FILE")
+
+        if [ "$TARGET_DB" = "all_databases" ] || [ "$TARGET_DB" = "all" ] || [[ "$FILENAME" == db_all_databases_* ]]; then
+            echo "[INFO] Restoring all databases snapshot from '${BACKUP_FILE}'..."
+            if gzip -dc "$BACKUP_FILE" | mysql -u root; then
+                echo "[SUCCESS] All databases restored successfully from '${BACKUP_FILE}'!"
+            else
+                echo "[ERROR] Database restore failed with code $?"
+                exit 1
+            fi
+        else
+            if [ -z "$TARGET_DB" ]; then
+                echo "[ERROR] Target database is required."
+                exit 1
+            fi
+            echo "[INFO] Restoring database '${TARGET_DB}' from '${BACKUP_FILE}'..."
+            mysql -u root -e "CREATE DATABASE IF NOT EXISTS \`$TARGET_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+            if gzip -dc "$BACKUP_FILE" | mysql -u root "$TARGET_DB"; then
+                echo "[SUCCESS] Database '${TARGET_DB}' restored successfully from '${BACKUP_FILE}'!"
+            else
+                echo "[ERROR] Database restore failed with code $?"
+                exit 1
+            fi
+        fi
         ;;
 
     restore_site)
+        set -o pipefail
         BACKUP_FILE="${2:-}"
         TARGET_DIR="${3:-}"
 
@@ -180,7 +196,18 @@ case "$ACTION" in
 
         echo "[INFO] Restoring website files from '${BACKUP_FILE}' to '${TARGET_DIR}'..."
         mkdir -p "$TARGET_DIR"
-        tar -xzf "$BACKUP_FILE" -C "$TARGET_DIR" --strip-components=1
+
+        FIRST_ENTRY=$(tar -tzf "$BACKUP_FILE" 2>/dev/null | head -n 1 || echo "")
+        FILENAME=$(basename "$BACKUP_FILE")
+
+        if [ "$TARGET_DIR" = "/www/wwwroot" ] || [[ "$FILENAME" == site_all_websites_* ]]; then
+            tar -xzf "$BACKUP_FILE" -C /www/wwwroot --strip-components=1 2>/dev/null || tar -xzf "$BACKUP_FILE" -C /www
+        elif echo "$FIRST_ENTRY" | grep -q "/$"; then
+            tar -xzf "$BACKUP_FILE" -C "$TARGET_DIR" --strip-components=1
+        else
+            tar -xzf "$BACKUP_FILE" -C "$TARGET_DIR"
+        fi
+
         chown -R www-data:www-data "$TARGET_DIR" 2>/dev/null || true
         chmod -R 0755 "$TARGET_DIR"
         echo "[SUCCESS] Website files restored successfully into '${TARGET_DIR}'!"

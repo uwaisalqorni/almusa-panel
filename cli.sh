@@ -233,11 +233,14 @@ cmd_backup() {
             }
             "
             ;;
+        restore)
+            php -r "require_once '${PANEL_ROOT}/app/bootstrap.php'; \$r = \App\Services\BackupEngine::restoreBackup((int)'${3:-0}', '${4:-}'); echo (\$r['success'] ? \$r['message'] : '[ERROR] ' . \$r['error']) . PHP_EOL;"
+            ;;
         prune)
             php -r "require_once '${PANEL_ROOT}/app/bootstrap.php'; \$n = \App\Services\BackupEngine::pruneOldBackups(${3:-7}); echo 'Dipangkas ' . \$n . ' berkas.' . PHP_EOL;"
             ;;
         *)
-            echo "Usage: ./cli.sh backup {db <name|all>|site <domain|all>|full|list|prune <days>}"
+            echo "Usage: ./cli.sh backup {db <name|all>|site <domain|all>|full|list|restore <id> [target]|prune <days>}"
             ;;
     esac
 }

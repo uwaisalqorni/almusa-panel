@@ -221,6 +221,120 @@ class BackupEngine
     }
 
     /**
+     * Restore database or website snapshot from local file (or download from cloud if missing)
+     */
+    public static function restoreBackup(int $id, ?string $targetOverride = null): array
+    {
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM backups WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $id]);
+        $backup = $stmt->fetch();
+
+        if (!$backup) {
+            return ['success' => false, 'error' => 'Data snapshot backup tidak ditemukan.'];
+        }
+
+        $filepath = $backup['filepath'];
+
+        // If local file is missing, attempt to pull it from Cloud Storage if configured
+        if (!file_exists($filepath)) {
+            if (!empty($backup['cloud_key'])) {
+                $endpoint  = Database::getSetting('cloud_storage_endpoint', '');
+                $bucket    = Database::getSetting('cloud_storage_bucket', '');
+                $accessKey = Database::getSetting('cloud_storage_access_key', '');
+                $secretKey = Database::getSetting('cloud_storage_secret_key', '');
+                $region    = Database::getSetting('cloud_storage_region', 'auto');
+
+                if ($endpoint && $bucket && $accessKey && $secretKey) {
+                    $client = new S3Client($endpoint, $bucket, $accessKey, $secretKey, $region);
+                    $dlRes = $client->downloadFile($backup['cloud_key'], $filepath);
+                    if (!$dlRes['success']) {
+                        return [
+                            'success' => false,
+                            'error'   => "File backup tidak ada di server dan gagal diunduh dari Cloud: " . ($dlRes['error'] ?? ''),
+                        ];
+                    }
+                } else {
+                    return [
+                        'success' => false,
+                        'error'   => "File backup fisik tidak ditemukan di server: {$filepath}, dan kredensial cloud tidak lengkap.",
+                    ];
+                }
+            } else {
+                return [
+                    'success' => false,
+                    'error'   => "File backup fisik tidak ditemukan di server: {$filepath}",
+                ];
+            }
+        }
+
+        $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
+        $script = "{$panelRoot}/scripts/backup_manager.sh";
+        if (!file_exists($script)) {
+            return ['success' => false, 'error' => "Skrip backup engine tidak ditemukan: {$script}"];
+        }
+
+        $target = trim($targetOverride ?? '');
+        if (empty($target)) {
+            $target = $backup['target'];
+        }
+
+        $startTime = microtime(true);
+        $cmd = '';
+
+        if ($backup['type'] === 'database') {
+            $isAll = ($backup['target'] === 'all_databases' || $target === 'all_databases' || $target === 'all');
+            $cleanDb = $isAll ? 'all_databases' : preg_replace('/[^a-zA-Z0-9_]/', '', $target);
+
+            $cmd = "bash " . escapeshellarg($script) . " restore_db " . escapeshellarg($filepath) . " " . escapeshellarg($cleanDb) . " 2>&1";
+        } elseif ($backup['type'] === 'site') {
+            $targetDir = '';
+            if ($target === 'all_websites' || $target === 'all' || $backup['target'] === 'all_websites') {
+                $targetDir = '/www/wwwroot';
+            } else {
+                // Check if target is a domain registered in sites table
+                $sStmt = $pdo->prepare("SELECT docroot FROM sites WHERE domain = :domain LIMIT 1");
+                $sStmt->execute([':domain' => $target]);
+                $siteRow = $sStmt->fetch();
+
+                if ($siteRow && !empty($siteRow['docroot'])) {
+                    $docroot = $siteRow['docroot'];
+                    $targetDir = $docroot;
+                    if (preg_match('#/public/?$#i', $docroot)) {
+                        $targetDir = dirname($docroot);
+                    }
+                } elseif (str_starts_with($target, '/')) {
+                    $targetDir = $target;
+                } else {
+                    $targetDir = "/www/wwwroot/{$target}";
+                }
+            }
+
+            $cmd = "bash " . escapeshellarg($script) . " restore_site " . escapeshellarg($filepath) . " " . escapeshellarg($targetDir) . " 2>&1";
+        } else {
+            return ['success' => false, 'error' => "Tipe backup tidak valid: {$backup['type']}"];
+        }
+
+        exec($cmd, $output, $exitCode);
+        $duration = round(microtime(true) - $startTime, 2);
+
+        if ($exitCode !== 0) {
+            return [
+                'success'  => false,
+                'duration' => "{$duration}s",
+                'error'    => 'Gagal mengeksekusi restore: ' . implode("\n", $output),
+            ];
+        }
+
+        return [
+            'success'  => true,
+            'duration' => "{$duration}s",
+            'message'  => "Pemulihan data snapshot '{$backup['name']}' berhasil diselesaikan dalam {$duration} detik!",
+            'output'   => implode("\n", $output),
+        ];
+    }
+
+    /**
      * Upload an existing backup snapshot to remote Cloudflare R2 / AWS S3
      */
     public static function syncToCloud(int $backupId, bool $removeLocalAfter = false): array
