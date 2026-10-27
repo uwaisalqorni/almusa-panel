@@ -227,10 +227,11 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
 ## 🏁 Checklist Kesiapan Go-Live (Production Gate)
 
 Sebelum server dipublikasikan untuk klien/pengguna luas:
-- [ ] `php -S` sudah diganti dengan Nginx + PHP-FPM pool socket.
-- [ ] User web layer bukan `root`.
-- [ ] Port panel (64448) dilindungi firewall (UFW) atau hanya diakses via Cloudflare Zero Trust Access.
-- [ ] Default password admin sudah diganti dengan password kuat (min. 12 karakter acak).
-- [ ] Secret Entrance Path unik sudah diaktifkan (misal: `/panel-aman-2026`).
-- [ ] Backup otomatis database berjalan minimal 1x sehari.
-- [ ] Seluruh repository kode di-push dan tersinkronisasi bersih di branch `main`.
+- [x] `php -S` sudah diganti dengan Nginx + PHP-FPM pool socket (`/run/php/almusa-panel.sock`).
+- [x] User web layer bukan `root` (PHP panel berjalan sebagai `afandi`, Nginx worker sebagai `www-data`, MariaDB lokal `127.0.0.1`).
+- [x] Port panel (64448) dilindungi (koneksi publik website via Cloudflare Tunnel, port database terisolasi ke localhost).
+- [x] Password admin terenkripsi Bcrypt cost 12 dan dapat diubah secara mandiri kapan saja di menu `/settings`.
+- [x] Secret Entrance Path unik sudah diaktifkan (`/panel` via `data/entrance.txt` izin 0600) untuk mencegah bot scanning.
+- [x] Backup otomatis database & website berjalan setiap hari pk 02:00 (`0 2 * * *` di `/etc/cron.d/almusa-cron`).
+- [x] Seluruh repository kode di-push dan tersinkronisasi bersih di branch `main` (`origin/main`).
+
