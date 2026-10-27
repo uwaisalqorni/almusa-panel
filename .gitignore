@@ -3,6 +3,8 @@ passroot-saya.md
 plan.md
 cf-token.md
 implementation.md
+audit_security.md
+audit_panelsaya
 
 # Runtime Panel Database & Generated Credentials
 data/panel.db
