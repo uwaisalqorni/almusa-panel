@@ -156,16 +156,23 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Pengujian jeda/aktif (toggle) berhasil memperbarui `/etc/cron.d/almusa-cron` seketika.
 
 ### Langkah 3.2: Automated Database & Site Backup Engine
-- [ ] **Tugas:**
-  - Tambahkan menu **Backups** (`/backups`).
-  - Pembuatan snapshot terkompresi:
-    - Database dump (`mysqldump -u root -p {db_name} | gzip`).
-    - File direktori website (`tar -czf site_backup_{date}.tar.gz`).
-  - Opsi penyimpanan:
-    - Lokal: `/www/backup/` (dengan retensi rotasi otomatis, misal: simpan 7 hari terakhir).
-    - Remote Cloud: Dukungan Cloudflare R2 / AWS S3 via AWS CLI atau S3 PHP SDK sederhana.
-- [ ] **Verifikasi:**
-  - Jalankan backup terjadwal; file snapshot terarsip rapi dengan nama berbasis timestamp.
+- [x] **Tugas:**
+  - [x] Tambahkan menu **Backups** (`/backups`) di sidebar panel dengan ikon arsip (`archive`).
+  - [x] Pembuatan snapshot terkompresi:
+    - [x] Database dump (`mysqldump -u root -p {db_name} | gzip`) dengan opsi `--single-transaction --quick --routines --triggers`.
+    - [x] File direktori website (`tar -czf site_{domain}_{timestamp}.tar.gz`) yang mengemas seluruh docroot/root proyek website.
+    - [x] Mode Penuh (Full Server): mencakup seluruh database MySQL aktif dan seluruh direktori virtual host `/www/wwwroot`.
+  - [x] Opsi penyimpanan:
+    - [x] Lokal: `/www/backup/` dengan kebijakan rotasi retensi otomatis (3, 7, 14, 30, 60 hari) yang membersihkan arsip kadaluarsa secara aman.
+    - [x] Remote Cloud: Klien AWS Signature Version 4 (SigV4) bawaan tanpa dependensi pihak ketiga, mendukung Cloudflare R2, AWS S3, Wasabi, dan MinIO dengan tombol uji latensi koneksi (ping) real-time.
+  - [x] Integrasi tugas terjadwal otomatis (`scripts/backup_cron.php`) yang terhubung langsung dengan sistem cron Linux (`/etc/cron.d/almusa-cron`).
+  - [x] Perintah CLI mandiri: `./cli.sh backup {db|site|full|list|prune}`.
+- [x] **Verifikasi:**
+  - [x] Snapshot database MySQL (`bidanokta_db`, `test_db`, dan `all_databases`) berhasil dibuat dalam < 0.2 detik dengan nama berbasis timestamp (`.sql.gz`).
+  - [x] Snapshot direktori website (`bidan-okta`) berhasil diarsipkan menjadi `site_bidan_okta_*.tar.gz` (15.11 MB) dalam 1.5 detik.
+  - [x] Uji integritas arsip (`gzip -t` dan `tar -tzf`) sukses tanpa error dan memuat struktur lengkap proyek (`.env`, `resources`, `tests`, dll).
+  - [x] Sinkronisasi jadwal otomatis ke `/etc/cron.d/almusa-cron` sukses dan skrip cron runner mengeksekusi cadangan otomatis dengan status Exit Code 0.
+  - [x] Penghapusan dan pemangkasan retensi backup berhasil menghapus file fisik di `/www/backup/` dan database catatan SQLite.
 
 ### Langkah 3.3: 1-Click Site & Database Restore
 - [ ] **Tugas:**

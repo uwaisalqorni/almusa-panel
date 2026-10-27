@@ -211,6 +211,37 @@ interactive_menu() {
     done
 }
 
+cmd_backup() {
+    local sub="${2:-list}"
+    case "$sub" in
+        db)
+            php -r "require_once '${PANEL_ROOT}/app/bootstrap.php'; \$r = \App\Services\BackupEngine::createDatabaseBackup('${3:-all}'); echo \$r['message'] . PHP_EOL;"
+            ;;
+        site)
+            php -r "require_once '${PANEL_ROOT}/app/bootstrap.php'; \$r = \App\Services\BackupEngine::createSiteBackup('${3:-all}'); echo \$r['message'] . PHP_EOL;"
+            ;;
+        full)
+            php -r "require_once '${PANEL_ROOT}/app/bootstrap.php'; \$r = \App\Services\BackupEngine::createFullBackup(); echo \$r['message'] . PHP_EOL;"
+            ;;
+        list)
+            php -r "
+            require_once '${PANEL_ROOT}/app/bootstrap.php';
+            \$list = \App\Services\BackupEngine::listBackups();
+            echo 'Total Snapshots: ' . count(\$list) . PHP_EOL;
+            foreach (\$list as \$b) {
+                echo sprintf(' - [%s] %-35s | %-10s | %s', \$b['type'], \$b['filename'], \$b['filesize_h'], \$b['created_at']) . PHP_EOL;
+            }
+            "
+            ;;
+        prune)
+            php -r "require_once '${PANEL_ROOT}/app/bootstrap.php'; \$n = \App\Services\BackupEngine::pruneOldBackups(${3:-7}); echo 'Dipangkas ' . \$n . ' berkas.' . PHP_EOL;"
+            ;;
+        *)
+            echo "Usage: ./cli.sh backup {db <name|all>|site <domain|all>|full|list|prune <days>}"
+            ;;
+    esac
+}
+
 # Routing arguments
 case "${1:-}" in
     start)
@@ -227,6 +258,10 @@ case "${1:-}" in
         ;;
     default)
         cmd_default
+        ;;
+    backup)
+        shift
+        cmd_backup "" "$@"
         ;;
     *)
         interactive_menu

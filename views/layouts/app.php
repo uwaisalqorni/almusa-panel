@@ -15,6 +15,7 @@ $nav = [
     ],
     'Otomasi & Tugas' => [
         ['/cron', 'Cron Jobs', 'clock'],
+        ['/backups', 'Cadangan (Backup)', 'archive'],
     ],
     'Ekstensi & jaringan' => [
         ['/plugins', 'App Store', 'package'],
@@ -34,6 +35,9 @@ $isActive = static function (string $href) use ($currentUri): bool {
     }
     if ($href === '/cron') {
         return $currentUri === '/cron';
+    }
+    if ($href === '/backups') {
+        return $currentUri === '/backups';
     }
     return str_starts_with($currentUri, $href);
 };
@@ -63,7 +67,7 @@ $isActive = static function (string $href) use ($currentUri): bool {
             <div class="brand-mark"><?= ui_icon('layers') ?></div>
             <div>
                 <div class="brand-name">Almusa Panel</div>
-                <div class="brand-sub">SLEMP Edition</div>
+                <div class="brand-sub">Lite Panel</div>
             </div>
         </div>
 

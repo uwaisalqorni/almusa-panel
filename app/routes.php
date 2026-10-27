@@ -11,6 +11,7 @@ use App\Controllers\TaskController;
 use App\Controllers\FileManagerController;
 use App\Controllers\NginxController;
 use App\Controllers\CronController;
+use App\Controllers\BackupController;
 
 // Auth routes
 Router::get('/login', [AuthController::class, 'showLogin']);
@@ -83,6 +84,16 @@ Router::post('/api/cron/delete', [CronController::class, 'delete']);
 Router::post('/api/cron/run-now', [CronController::class, 'runNow']);
 Router::get('/api/cron/logs', [CronController::class, 'getLogs']);
 Router::post('/api/cron/clear-logs', [CronController::class, 'clearLogs']);
+
+// Backups & Snapshots Engine
+Router::get('/backups', [BackupController::class, 'index']);
+Router::post('/api/backups/create', [BackupController::class, 'create']);
+Router::post('/api/backups/delete', [BackupController::class, 'delete']);
+Router::get('/api/backups/download', [BackupController::class, 'download']);
+Router::post('/api/backups/sync-cloud', [BackupController::class, 'syncCloud']);
+Router::post('/api/backups/settings/cloud', [BackupController::class, 'saveCloudSettings']);
+Router::post('/api/backups/test-cloud', [BackupController::class, 'testCloud']);
+Router::post('/api/backups/settings/schedule', [BackupController::class, 'saveSchedule']);
 
 // Tasks & Real-time Logs API
 Router::get('/api/system/stats', [DashboardController::class, 'stats']);

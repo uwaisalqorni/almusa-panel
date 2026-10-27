@@ -163,6 +163,22 @@ class Database
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- 9. Backups History & Tracking
+        CREATE TABLE IF NOT EXISTS backups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,          -- 'database', 'site', 'full'
+            target TEXT NOT NULL,        -- database name, site domain, or 'all'
+            filename TEXT NOT NULL,      -- file name (e.g. db_bidanokta_20261027_054500.sql.gz)
+            filepath TEXT NOT NULL,      -- full path on disk
+            filesize INTEGER NOT NULL DEFAULT 0,
+            storage_location TEXT NOT NULL DEFAULT 'local', -- 'local', 'cloud', 'both'
+            cloud_synced INTEGER NOT NULL DEFAULT 0,
+            cloud_key TEXT DEFAULT NULL,
+            created_by TEXT DEFAULT 'manual', -- 'manual', 'schedule'
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 SQL;
 
         $pdo->exec($schema);

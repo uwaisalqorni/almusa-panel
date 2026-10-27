@@ -273,6 +273,37 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             }
             return "systemctl reload " . escapeshellarg($service);
 
+        case 'backup_run':
+            $targetType = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['target_type'] ?? 'all_db'));
+            $target = (string)($payload['target'] ?? '');
+            $script = "{$root}/scripts/backup_manager.sh";
+            if (!file_exists($script)) return null;
+            if ($targetType === 'database') {
+                $cleanDb = preg_replace('/[^a-zA-Z0-9_]/', '', $target);
+                return "bash " . escapeshellarg($script) . " backup_db " . escapeshellarg($cleanDb);
+            } elseif ($targetType === 'site') {
+                $cleanDomain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', $target);
+                $docroot = (string)($payload['docroot'] ?? '');
+                return "bash " . escapeshellarg($script) . " backup_site " . escapeshellarg($cleanDomain) . " " . escapeshellarg($docroot);
+            } elseif ($targetType === 'all_sites') {
+                return "bash " . escapeshellarg($script) . " backup_all_sites";
+            } else {
+                return "bash " . escapeshellarg($script) . " backup_all_db";
+            }
+
+        case 'backup_restore':
+            $type = (string)($payload['type'] ?? 'database');
+            $file = (string)($payload['file'] ?? '');
+            $target = (string)($payload['target'] ?? '');
+            $script = "{$root}/scripts/backup_manager.sh";
+            if (!file_exists($script) || !file_exists($file)) return null;
+            if ($type === 'database') {
+                $cleanDb = preg_replace('/[^a-zA-Z0-9_]/', '', $target);
+                return "bash " . escapeshellarg($script) . " restore_db " . escapeshellarg($file) . " " . escapeshellarg($cleanDb);
+            } else {
+                return "bash " . escapeshellarg($script) . " restore_site " . escapeshellarg($file) . " " . escapeshellarg($target);
+            }
+
         default:
             return null;
     }
