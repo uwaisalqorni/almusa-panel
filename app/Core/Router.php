@@ -98,7 +98,8 @@ class Router
             if (Auth::check()) {
                 Response::redirect('/dashboard');
             } else {
-                Response::redirect('/login');
+                (new \App\Controllers\AuthController())->showLogin();
+                exit;
             }
         }
 
