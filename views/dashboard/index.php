@@ -85,10 +85,18 @@ $disk = (float)$stats['disk']['percent'];
         <section class="card card-flush" aria-labelledby="svcTitle">
             <div class="card-header">
                 <div>
-                    <h2 class="card-title" id="svcTitle">Layanan server</h2>
-                    <p class="card-desc">Status layanan inti yang dikelola panel</p>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <h2 class="card-title" id="svcTitle">Layanan server</h2>
+                        <span class="badge badge-success" style="font-size: 10.5px; padding: 2px 7px;"><span class="dot dot-ok"></span> Auto-Heal Aktif</span>
+                    </div>
+                    <p class="card-desc">Status layanan inti yang dipantau & dipulihkan otomatis oleh Watchdog</p>
                 </div>
-                <a href="/plugins" class="btn btn-secondary btn-sm">Kelola</a>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <a href="/watchdog" class="btn btn-secondary btn-sm" title="Pantau Service Watchdog & Riwayat Auto-Heal">
+                        <?= ui_icon('activity') ?> Watchdog
+                    </a>
+                    <a href="/plugins" class="btn btn-secondary btn-sm">Kelola</a>
+                </div>
             </div>
             <div class="card-body">
                 <div class="rows">

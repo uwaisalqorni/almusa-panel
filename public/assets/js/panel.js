@@ -260,12 +260,28 @@
     };
 
     A.busy = function (btn, label) {
+        if (!btn) return function () {};
         var original = btn.innerHTML;
+        btn.dataset.originalHtml = original;
         btn.disabled = true;
         btn.textContent = '';
         btn.appendChild(el('span', 'spinner'));
         if (label) btn.appendChild(document.createTextNode(label));
-        return function () { btn.disabled = false; btn.innerHTML = original; };
+        return function () {
+            btn.disabled = false;
+            btn.innerHTML = original;
+            delete btn.dataset.originalHtml;
+        };
+    };
+
+    A.unbusy = function (btn) {
+        if (btn && btn.dataset && btn.dataset.originalHtml) {
+            btn.innerHTML = btn.dataset.originalHtml;
+            btn.disabled = false;
+            delete btn.dataset.originalHtml;
+        } else if (btn) {
+            btn.disabled = false;
+        }
     };
 
     A.copy = async function (text) {

@@ -12,6 +12,7 @@ use App\Controllers\FileManagerController;
 use App\Controllers\NginxController;
 use App\Controllers\CronController;
 use App\Controllers\BackupController;
+use App\Controllers\WatchdogController;
 
 // Auth routes
 Router::get('/login', [AuthController::class, 'showLogin']);
@@ -95,6 +96,12 @@ Router::post('/api/backups/sync-cloud', [BackupController::class, 'syncCloud']);
 Router::post('/api/backups/settings/cloud', [BackupController::class, 'saveCloudSettings']);
 Router::post('/api/backups/test-cloud', [BackupController::class, 'testCloud']);
 Router::post('/api/backups/settings/schedule', [BackupController::class, 'saveSchedule']);
+
+// Service Watchdog & Auto-Heal Daemon
+Router::get('/watchdog', [WatchdogController::class, 'index']);
+Router::post('/api/watchdog/run', [WatchdogController::class, 'run']);
+Router::get('/api/watchdog/raw-log', [WatchdogController::class, 'getRawLog']);
+Router::post('/api/watchdog/clear-log', [WatchdogController::class, 'clearLog']);
 
 // Tasks & Real-time Logs API
 Router::get('/api/system/stats', [DashboardController::class, 'stats']);

@@ -304,6 +304,17 @@ function buildSanitizedCommand(string $action, array $payload): ?string
                 return "bash " . escapeshellarg($script) . " restore_site " . escapeshellarg($file) . " " . escapeshellarg($target);
             }
 
+        case 'watchdog_install':
+            $script = "{$root}/scripts/watchdog_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " install";
+
+        case 'watchdog_action':
+            $sub = preg_replace('/[^a-z]/', '', (string)($payload['command'] ?? 'run'));
+            $script = "{$root}/scripts/watchdog_manager.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " " . escapeshellarg($sub);
+
         default:
             return null;
     }

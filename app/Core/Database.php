@@ -179,6 +179,17 @@ class Database
             created_by TEXT DEFAULT 'manual', -- 'manual', 'schedule'
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- 10. Incident & Health Watchdog Logs
+        CREATE TABLE IF NOT EXISTS incident_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_name TEXT NOT NULL,
+            event_type TEXT NOT NULL DEFAULT 'service_down', -- 'service_down', 'disk_high', 'brute_force'
+            details TEXT NOT NULL,
+            action_taken TEXT NOT NULL DEFAULT 'restart',   -- 'restart', 'alert_only'
+            recovery_status TEXT NOT NULL DEFAULT 'recovered', -- 'recovered', 'failed', 'warning'
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 SQL;
 
         $pdo->exec($schema);

@@ -210,6 +210,11 @@ case "$ACTION" in
 
         chown -R www-data:www-data "$TARGET_DIR" 2>/dev/null || true
         chmod -R 0755 "$TARGET_DIR"
+        [ -d "$TARGET_DIR/storage" ] && chmod -R 0775 "$TARGET_DIR/storage" 2>/dev/null || true
+        [ -d "$TARGET_DIR/bootstrap/cache" ] && chmod -R 0775 "$TARGET_DIR/bootstrap/cache" 2>/dev/null || true
+        [ -d "$TARGET_DIR/database" ] && chmod -R 0775 "$TARGET_DIR/database" 2>/dev/null || true
+        [ -d "$TARGET_DIR/var/cache" ] && chmod -R 0775 "$TARGET_DIR/var/cache" 2>/dev/null || true
+        [ -d "$TARGET_DIR/var/log" ] && chmod -R 0775 "$TARGET_DIR/var/log" 2>/dev/null || true
         echo "[SUCCESS] Website files restored successfully into '${TARGET_DIR}'!"
         ;;
 

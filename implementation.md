@@ -193,15 +193,18 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
 > **Tujuan:** Server dapat memulihkan diri sendiri (*self-healing*) dan memberi kabar darurat jika ada kendala.
 
 ### Langkah 4.1: Service Watchdog & Auto-Heal Daemon
-- [ ] **Tugas:**
-  - Buat skrip cron / systemd timer watchdog (`watchdog.php` berjalan setiap 1 menit):
-    - Cek status `systemctl is-active nginx`.
-    - Cek status `systemctl is-active mariadb`.
-    - Cek status `systemctl is-active php8.3-fpm` & versi lain.
-    - Cek status `cloudflared`.
-  - Jika salah satu service mati mendadak (*failed/inactive*), watchdog langsung mengeksekusi `systemctl restart {service}` dan mencatat log kejadian ke `data/panel_incident.log`.
-- [ ] **Verifikasi:**
-  - Matikan manual Nginx via terminal (`sudo systemctl stop nginx`); dalam 1-2 menit service harus menyala kembali secara otomatis.
+- [x] **Tugas:**
+  - [x] Buat skrip cron / systemd timer watchdog (`scripts/watchdog.php` berjalan setiap 1 menit didukung `App\Services\WatchdogService`).
+  - [x] Cek status `systemctl is-active nginx`.
+  - [x] Cek status `systemctl is-active mariadb` & `mysql`.
+  - [x] Cek status seluruh versi PHP-FPM terinstal (`php8.2-fpm`, `php8.3-fpm`, `php8.4-fpm`).
+  - [x] Cek status `cloudflared` (systemd unit & quick tunnels) serta background worker `mypanel-worker`.
+  - [x] Jika salah satu service mati mendadak (*failed/inactive*), watchdog langsung mengeksekusi `systemctl restart {service}` dan mencatat log kejadian ke `data/panel_incident.log` serta tabel SQLite `incident_logs`.
+  - [x] Integrasi CLI tool: `./cli.sh watchdog {status|run|dry-run|log}`.
+- [x] **Verifikasi:**
+  - [x] Matikan manual Nginx via terminal / background task; dalam < 10 detik Nginx terdeteksi `inactive` dan berhasil dihidupkan kembali secara otomatis (*auto-healed*) menjadi `active`.
+  - [x] Catatan insiden tercatat presisi di `data/panel_incident.log`: `[INCIDENT] Layanan 'nginx' terdeteksi mati (status: inactive). Auto-heal dieksekusi: BERHASIL_DIPULIHKAN (status baru: active).`
+  - [x] Systemd timer `almusa-watchdog.timer` aktif dan tersinkronisasi bersama cron sistem `/etc/cron.d/almusa-cron`.
 
 ### Langkah 4.2: Notifikasi Insiden (Telegram / Discord Webhook)
 - [ ] **Tugas:**

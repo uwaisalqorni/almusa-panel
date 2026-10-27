@@ -937,7 +937,7 @@ async function executeRestore() {
     var alertText = document.getElementById('restoreAlertText');
     if (alertBox) alertBox.style.display = 'none';
 
-    Almusa.busy(btn, 'Memulihkan data...');
+    var restoreBtn = Almusa.busy(btn, 'Memulihkan data...');
     chk.disabled = true;
 
     try {
@@ -953,7 +953,8 @@ async function executeRestore() {
                 location.reload();
             }, 1200);
         } else {
-            Almusa.unbusy(btn);
+            if (typeof restoreBtn === 'function') restoreBtn();
+            else if (Almusa.unbusy) Almusa.unbusy(btn);
             chk.disabled = false;
             if (alertText && alertBox) {
                 alertText.textContent = res.error || 'Terjadi kesalahan saat memulihkan snapshot.';
@@ -962,7 +963,8 @@ async function executeRestore() {
             Almusa.toast(res.error || 'Gagal memulihkan snapshot data.', 'error');
         }
     } catch (err) {
-        Almusa.unbusy(btn);
+        if (typeof restoreBtn === 'function') restoreBtn();
+        else if (Almusa.unbusy) Almusa.unbusy(btn);
         chk.disabled = false;
         if (alertText && alertBox) {
             alertText.textContent = err.message || 'Terjadi gangguan koneksi jaringan.';

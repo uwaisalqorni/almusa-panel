@@ -15,6 +15,7 @@ $nav = [
     ],
     'Otomasi & Tugas' => [
         ['/cron', 'Cron Jobs', 'clock'],
+        ['/watchdog', 'Service Watchdog', 'activity'],
         ['/backups', 'Cadangan (Backup)', 'archive'],
     ],
     'Ekstensi & jaringan' => [
@@ -35,6 +36,9 @@ $isActive = static function (string $href) use ($currentUri): bool {
     }
     if ($href === '/cron') {
         return $currentUri === '/cron';
+    }
+    if ($href === '/watchdog') {
+        return $currentUri === '/watchdog';
     }
     if ($href === '/backups') {
         return $currentUri === '/backups';

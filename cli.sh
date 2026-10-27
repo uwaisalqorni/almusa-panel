@@ -245,6 +245,31 @@ cmd_backup() {
     esac
 }
 
+cmd_watchdog() {
+    local sub="${2:-status}"
+    case "$sub" in
+        status)
+            php "${PANEL_ROOT}/scripts/watchdog.php" --status
+            ;;
+        run)
+            php "${PANEL_ROOT}/scripts/watchdog.php"
+            ;;
+        dry-run)
+            php "${PANEL_ROOT}/scripts/watchdog.php" --dry-run
+            ;;
+        log)
+            if [ -f "${PANEL_ROOT}/data/panel_incident.log" ]; then
+                tail -n 35 "${PANEL_ROOT}/data/panel_incident.log"
+            else
+                echo "Belum ada catatan insiden di data/panel_incident.log"
+            fi
+            ;;
+        *)
+            echo "Usage: ./cli.sh watchdog {status|run|dry-run|log}"
+            ;;
+    esac
+}
+
 # Routing arguments
 case "${1:-}" in
     start)
@@ -265,6 +290,10 @@ case "${1:-}" in
     backup)
         shift
         cmd_backup "" "$@"
+        ;;
+    watchdog)
+        shift
+        cmd_watchdog "" "$@"
         ;;
     *)
         interactive_menu
