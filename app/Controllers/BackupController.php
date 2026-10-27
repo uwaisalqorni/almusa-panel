@@ -28,7 +28,11 @@ class BackupController
         try {
             $rootPass = Database::getSetting('mysql_root_pass', '');
             $dsn = "mysql:host=127.0.0.1;port=3306;charset=utf8mb4";
-            $mysqlPdo = new \PDO($dsn, 'root', $rootPass, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+            $mysqlPdo = new \PDO($dsn, 'root', $rootPass, [
+                \PDO::ATTR_ERRMODE            => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_EMULATE_PREPARES   => false,
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            ]);
             $rows = $mysqlPdo->query("SHOW DATABASES")->fetchAll(\PDO::FETCH_COLUMN);
             $systemDbs = ['information_schema', 'performance_schema', 'mysql', 'sys'];
             foreach ($rows as $r) {

@@ -148,6 +148,13 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             if (!file_exists($script)) return null;
             return "bash " . escapeshellarg($script) . " uninstall " . escapeshellarg($version);
 
+        case 'plugin_update':
+            $plugin = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['plugin'] ?? ''));
+            $version = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', (string)($payload['version'] ?? ''));
+            $script = "{$root}/plugins/{$plugin}/install.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " update " . escapeshellarg($version);
+
         case 'php_ext_install':
             $ver = preg_replace('/[^0-9\.]/', '', (string)($payload['version'] ?? ''));
             $ext = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['extension'] ?? ''));

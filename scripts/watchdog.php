@@ -37,6 +37,13 @@ if ($isStatusOnly) {
     exit(0);
 }
 
+// Check if worker reload/restart was requested
+$workerTrigger = "{$root}/data/restart_worker.trigger";
+if (file_exists($workerTrigger)) {
+    @unlink($workerTrigger);
+    @shell_exec("systemctl restart mypanel-worker.service");
+}
+
 $start = microtime(true);
 $res = WatchdogService::run($isDryRun);
 $duration = round(microtime(true) - $start, 3);

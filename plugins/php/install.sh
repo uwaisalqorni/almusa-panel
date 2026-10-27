@@ -80,11 +80,14 @@ case "$ACTION" in
         ;;
 
     update)
-        echo "[INFO] Updating PHP $VERSION packages..."
-        apt-get update -y
-        DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y "php${VERSION}-*"
-        systemctl restart "php${VERSION}-fpm"
-        echo "[SUCCESS] PHP $VERSION updated and restarted!"
+        echo "[INFO] Patching and updating PHP $VERSION against CVE-2026-109618 / CVE-2026-109619..."
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y \
+            -o Dpkg::Options::="--force-confdef" \
+            -o Dpkg::Options::="--force-confold" \
+            "php${VERSION}-*"
+        systemctl reload "php${VERSION}-fpm" || systemctl restart "php${VERSION}-fpm"
+        echo "[SUCCESS] PHP $VERSION successfully patched and reloaded!"
         ;;
 
     uninstall)

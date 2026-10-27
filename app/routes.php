@@ -64,6 +64,8 @@ Router::post('/api/databases/sso-token', [DatabaseController::class, 'ssoToken']
 Router::get('/plugins', [PluginController::class, 'index']);
 Router::post('/api/plugins/install', [PluginController::class, 'install']);
 Router::post('/api/plugins/uninstall', [PluginController::class, 'uninstall']);
+Router::post('/api/plugins/update', [PluginController::class, 'update']);
+Router::post('/api/plugins/check-php-updates', [PluginController::class, 'checkPhpUpdates']);
 Router::post('/api/plugins/php/extension', [PluginController::class, 'manageExtension']);
 
 // Nginx Global Manager

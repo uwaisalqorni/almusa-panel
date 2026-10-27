@@ -102,10 +102,17 @@ $services = [
 </section>
 
 <section class="card card-flush">
-    <div class="card-header">
+    <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div>
-            <h2 class="card-title">Versi PHP</h2>
-            <p class="card-desc">Setiap versi berjalan pada socket PHP-FPM terpisah.</p>
+            <h2 class="card-title" style="display:flex; align-items:center; gap:8px;">
+                <?= ui_icon('shield') ?> Versi PHP &amp; Mitigasi PHP2Shell
+            </h2>
+            <p class="card-desc">Setiap versi berjalan pada socket PHP-FPM terisolasi dengan proteksi sandbox <code>open_basedir</code>, pemblokiran fungsi eksekusi sistem, dan verifikasi patch APT (CVE-2026-109618 &amp; CVE-2026-109619).</p>
+        </div>
+        <div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnCheckPhpUpdates" onclick="checkAllPhpUpdates()">
+                <?= ui_icon('refresh') ?> Cek Update Patch APT
+            </button>
         </div>
     </div>
     <div class="card-body">
@@ -115,14 +122,22 @@ $services = [
                     <tr>
                         <th>Versi</th>
                         <th>Socket FPM</th>
-                        <th>Status</th>
+                        <th>Status Layanan</th>
+                        <th>Mitigasi PHP2Shell &amp; Patch</th>
                         <th class="th-right">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($phpList as $ver => $info): ?>
                     <tr>
-                        <td><div class="cell-title">PHP <?= e($ver) ?></div></td>
+                        <td>
+                            <div class="cell-title" style="display:flex; align-items:center; gap:6px;">
+                                <strong>PHP <?= e($ver) ?></strong>
+                                <?php if ($info['installed']): ?>
+                                    <span class="badge badge-neutral mono" style="font-size:10.5px;"><?= e(substr($info['installed_version'] ?: 'installed', 0, 16)) ?></span>
+                                <?php endif; ?>
+                            </div>
+                        </td>
                         <td><code>/run/php/php<?= e($ver) ?>-fpm.sock</code></td>
                         <td>
                             <?php if ($info['active']): ?>
@@ -134,17 +149,37 @@ $services = [
                             <?php endif; ?>
                         </td>
                         <td>
+                            <?php if (!$info['installed']): ?>
+                                <span class="badge badge-neutral">—</span>
+                            <?php elseif (!empty($info['update_required'])): ?>
+                                <span class="badge badge-danger" title="Candidate: <?= e($info['candidate_version']) ?>">
+                                    <?= ui_icon('alert-triangle') ?> CVE-2026-109618 / CVE-2026-109619 Patch: Update Required
+                                </span>
+                            <?php else: ?>
+                                <span class="badge badge-success" title="Version: <?= e($info['installed_version']) ?>">
+                                    <?= ui_icon('shield') ?> Patched &amp; Hardened
+                                </span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
                             <div class="cell-actions">
                                 <?php if (!$info['installed']): ?>
                                     <button type="button" class="btn btn-primary btn-sm" onclick="queuePluginAction('install', 'php', <?= js_arg($ver) ?>)">
                                         <?= ui_icon('download') ?> Pasang
                                     </button>
                                 <?php else: ?>
+                                    <?php if (!empty($info['update_required'])): ?>
+                                        <button type="button" class="btn btn-primary btn-sm" style="background:var(--danger, #ef4444); border-color:var(--danger, #ef4444);" onclick="queuePluginAction('update', 'php', <?= js_arg($ver) ?>)">
+                                            <?= ui_icon('shield') ?> 1-Click Patch PHP
+                                        </button>
+                                    <?php else: ?>
+                                        <button type="button" class="btn btn-secondary btn-sm" title="Paket sudah versi terbaru. Klik untuk menjalankan update ulang." onclick="queuePluginAction('update', 'php', <?= js_arg($ver) ?>)">
+                                            <?= ui_icon('refresh') ?> 1-Click Patch PHP
+                                        </button>
+                                    <?php endif; ?>
+
                                     <button type="button" class="btn btn-secondary btn-sm" onclick="openExtModal(<?= js_arg($ver) ?>)">
                                         <?= ui_icon('puzzle') ?> Ekstensi
-                                    </button>
-                                    <button type="button" class="btn btn-secondary btn-sm" onclick="queuePluginAction('install', 'php', <?= js_arg($ver) ?>)">
-                                        <?= ui_icon('refresh') ?> Perbarui
                                     </button>
                                     <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Hapus PHP <?= e($ver) ?>" aria-label="Hapus PHP <?= e($ver) ?>"
                                             onclick="queuePluginAction('uninstall', 'php', <?= js_arg($ver) ?>)">
@@ -163,21 +198,37 @@ $services = [
 
 <script>
 async function queuePluginAction(action, plugin, version) {
-    var installing = action === 'install';
     var target = plugin === 'php' ? 'PHP ' + version : ({ nginx: 'Nginx', mysql: 'MySQL / MariaDB', cloudflared: 'cloudflared' }[plugin] || plugin);
+    let title, message, confirmText, danger = false, endpoint;
+
+    if (action === 'install') {
+        title = 'Pasang ' + target;
+        message = 'Proses instalasi akan dijalankan oleh daemon di latar belakang. Anda bisa memantaunya di terminal task.';
+        confirmText = 'Pasang';
+        endpoint = '/api/plugins/install';
+    } else if (action === 'update') {
+        title = '1-Click Patch ' + target;
+        message = 'Sistem akan mengunduh paket APT terbaru dan menerapkan patch mitigasi CVE-2026-109618 / CVE-2026-109619 untuk ' + target + '.';
+        confirmText = 'Terapkan Patch';
+        endpoint = '/api/plugins/update';
+    } else {
+        title = 'Hapus ' + target;
+        message = target + ' akan dihapus dari server. Pastikan tidak ada website yang masih memakainya.';
+        confirmText = 'Hapus';
+        danger = true;
+        endpoint = '/api/plugins/uninstall';
+    }
 
     var ok = await Almusa.confirm({
-        title: installing ? 'Pasang ' + target : 'Hapus ' + target,
-        message: installing
-            ? 'Proses akan dijalankan oleh daemon di latar belakang. Anda bisa memantaunya di terminal.'
-            : target + ' akan dihapus dari server. Pastikan tidak ada website yang masih memakainya.',
-        confirmText: installing ? 'Pasang' : 'Hapus',
-        danger: !installing
+        title: title,
+        message: message,
+        confirmText: confirmText,
+        danger: danger
     });
     if (!ok) return;
 
     try {
-        var data = await Almusa.post(installing ? '/api/plugins/install' : '/api/plugins/uninstall', { plugin: plugin, version: version });
+        var data = await Almusa.post(endpoint, { plugin: plugin, version: version });
         if (data.success) {
             openTaskTerminal();
         } else {
@@ -185,6 +236,28 @@ async function queuePluginAction(action, plugin, version) {
         }
     } catch (err) {
         Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+    }
+}
+
+async function checkAllPhpUpdates() {
+    var btn = document.getElementById('btnCheckPhpUpdates');
+    var restoreBtn = Almusa.busy(btn, 'Memeriksa...');
+
+    try {
+        var res = await Almusa.post('/api/plugins/check-php-updates', {});
+        if (typeof restoreBtn === 'function') restoreBtn();
+        else if (Almusa.unbusy) Almusa.unbusy(btn);
+
+        if (res.success) {
+            Almusa.toast('Pemeriksaan patch APT selesai. Memuat ulang status...', 'success');
+            setTimeout(() => location.reload(), 700);
+        } else {
+            Almusa.toast(res.error || 'Gagal memeriksa update patch APT.', 'error');
+        }
+    } catch (err) {
+        if (typeof restoreBtn === 'function') restoreBtn();
+        else if (Almusa.unbusy) Almusa.unbusy(btn);
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
     }
 }
 

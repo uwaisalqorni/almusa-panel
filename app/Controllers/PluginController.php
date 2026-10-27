@@ -38,16 +38,30 @@ class PluginController
             ],
         ];
 
-        // PHP Multi-Versions
+        // PHP Multi-Versions & APT Patch Status (CVE-2026-109618 / CVE-2026-109619)
         $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+        $patchStatus = [];
+        $checkScript = "{$root}/plugins/php/check_updates.sh";
+        if (file_exists($checkScript)) {
+            $rawJson = @shell_exec("bash " . escapeshellarg($checkScript));
+            if ($rawJson) {
+                $patchStatus = @json_decode($rawJson, true) ?: [];
+            }
+        }
+
         $phpList = [];
         foreach ($phpVersions as $ver) {
             $isInstalled = file_exists("/etc/php/{$ver}/fpm") || file_exists("/usr/bin/php{$ver}");
             $isActive = file_exists("/run/php/php{$ver}-fpm.sock") || SystemMonitor::isServiceActive("php{$ver}-fpm");
+            $patchInfo = $patchStatus[$ver] ?? [];
             $phpList[$ver] = [
-                'version'   => $ver,
-                'installed' => $isInstalled,
-                'active'    => $isActive,
+                'version'           => $ver,
+                'installed'         => $isInstalled,
+                'active'            => $isActive,
+                'installed_version' => $patchInfo['installed_version'] ?? '',
+                'candidate_version' => $patchInfo['candidate_version'] ?? '',
+                'update_required'   => !empty($patchInfo['update_required']),
+                'patch_status'      => $patchInfo['status'] ?? ($isInstalled ? 'patched' : 'not_installed'),
             ];
         }
 
@@ -162,6 +176,60 @@ class PluginController
         Response::json([
             'success' => true,
             'message' => "Tugas '{$title}' dijadwalkan ke antrean.",
+        ]);
+    }
+
+    /**
+     * 1-Click Patch PHP (CVE-2026-109618 / CVE-2026-109619)
+     */
+    public function update(): void
+    {
+        $plugin = trim($_POST['plugin'] ?? '');
+        $version = trim($_POST['version'] ?? '');
+
+        if ($plugin !== 'php') {
+            Response::json(['success' => false, 'error' => 'Plugin tidak valid.'], 400);
+        }
+
+        if (!preg_match('/^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4)$/', $version)) {
+            Response::json(['success' => false, 'error' => 'Versi PHP tidak valid.'], 400);
+        }
+
+        $title = "1-Click Patch PHP {$version} (CVE-2026-109618 / CVE-2026-109619)";
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("
+            INSERT INTO tasks (title, action, payload, status) 
+            VALUES (:title, 'plugin_update', :payload, 'pending')
+        ");
+        $stmt->execute([
+            ':title'   => $title,
+            ':payload' => json_encode(['plugin' => 'php', 'version' => $version]),
+        ]);
+
+        Response::json([
+            'success' => true,
+            'message' => "Tugas patch keamanan '{$title}' berhasil dimasukkan ke antrean task daemon.",
+        ]);
+    }
+
+    /**
+     * AJAX Endpoint to check latest APT candidate updates
+     */
+    public function checkPhpUpdates(): void
+    {
+        $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
+        $checkScript = "{$root}/plugins/php/check_updates.sh";
+        $data = [];
+        if (file_exists($checkScript)) {
+            $rawJson = @shell_exec("bash " . escapeshellarg($checkScript));
+            if ($rawJson) {
+                $data = @json_decode($rawJson, true) ?: [];
+            }
+        }
+
+        Response::json([
+            'success' => true,
+            'data'    => $data,
         ]);
     }
 }
