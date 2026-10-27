@@ -8,8 +8,14 @@ class Auth
     {
         if (session_status() === PHP_SESSION_NONE) {
             $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-                || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)
-                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+                || (isset($_SERVER['SERVER_PORT']) && (int)$_SERVER['SERVER_PORT'] === 443)
+                || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https')
+                || (isset($_SERVER['HTTP_CF_VISITOR']) && str_contains($_SERVER['HTTP_CF_VISITOR'], 'https'));
+
+            // Mask default PHP session cookie name to avoid scanner technology detection
+            if (session_name() !== '__adm_sess') {
+                session_name('__adm_sess');
+            }
 
             session_set_cookie_params([
                 'lifetime' => 86400 * 7, // 7 days
@@ -17,10 +23,22 @@ class Auth
                 'domain'   => '',
                 'secure'   => $isHttps,
                 'httponly' => true,
-                'samesite' => 'Lax',
+                'samesite' => 'Strict',
             ]);
 
             session_start();
+
+            // Expire and flush any legacy PHPSESSID cookie to clear scanner warnings
+            if (isset($_COOKIE['PHPSESSID'])) {
+                setcookie('PHPSESSID', '', [
+                    'expires'  => time() - 3600,
+                    'path'     => '/',
+                    'secure'   => $isHttps,
+                    'httponly' => true,
+                    'samesite' => 'Strict',
+                ]);
+                unset($_COOKIE['PHPSESSID']);
+            }
         }
     }
 
