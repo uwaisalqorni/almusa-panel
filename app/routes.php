@@ -26,6 +26,8 @@ Router::get('/dashboard', [DashboardController::class, 'index']);
 Router::get('/settings', [DashboardController::class, 'settings']);
 Router::post('/settings/save', [DashboardController::class, 'saveSettings']);
 Router::post('/settings/change-password', [DashboardController::class, 'changePassword']);
+Router::post('/api/settings/notifications/save', [DashboardController::class, 'saveNotificationSettings']);
+Router::post('/api/settings/notifications/test', [DashboardController::class, 'testNotification']);
 
 // Sites / Virtual Hosts
 Router::get('/sites', [SiteController::class, 'index']);

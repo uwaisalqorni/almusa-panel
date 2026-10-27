@@ -120,6 +120,13 @@ class RateLimiter
 
         if ($isLocked) {
             self::logSecurity("ALERT", "IP {$ip} terkunci selama 15 menit setelah {$attempts}x gagal login berturut-turut (username target: '{$username}')");
+            try {
+                if (class_exists('\\App\\Services\\NotificationService')) {
+                    \App\Services\NotificationService::sendBruteForceAlert($ip, $username, $attempts);
+                }
+            } catch (\Throwable $e) {
+                // Non-blocking notification
+            }
         } else {
             $remaining = max(0, self::MAX_ATTEMPTS - $attempts);
             self::logSecurity("WARN", "Gagal login ({$attempts}/" . self::MAX_ATTEMPTS . ") dari IP {$ip} (username target: '{$username}'). Sisa percobaan: {$remaining}");

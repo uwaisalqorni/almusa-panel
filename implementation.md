@@ -207,15 +207,20 @@ Dokumen ini berisi panduan terstruktur, urutan fase pengerjaan (*step-by-step*),
   - [x] Systemd timer `almusa-watchdog.timer` aktif dan tersinkronisasi bersama cron sistem `/etc/cron.d/almusa-cron`.
 
 ### Langkah 4.2: Notifikasi Insiden (Telegram / Discord Webhook)
-- [ ] **Tugas:**
-  - Tambahkan seksi pengaturan di `/settings`: **Notifikasi Darurat**.
-  - Opsi: Telegram Bot Token & Chat ID, atau Discord Webhook URL.
-  - Trigger notifikasi:
-    - Service mengalami restart otomatis oleh Watchdog.
-    - Penggunaan disk storage `/` melebihi ambang batas 85%.
-    - Terjadi 5x percobaan login gagal beruntun (indikasi brute-force).
-- [ ] **Verifikasi:**
-  - Klik tombol "Kirim Notifikasi Uji Coba" di menu pengaturan; pesan uji coba masuk ke grup Telegram/Discord.
+- [x] **Tugas:**
+  - [x] Tambahkan seksi pengaturan di `/settings`: **Notifikasi Darurat (Telegram & Discord Webhook)**.
+  - [x] Integrasi Telegram Bot (Bot Token dengan reveal toggle, Chat ID target grup/personal, dan panduan @BotFather / @userinfobot).
+  - [x] Integrasi Discord Webhook (Webhook URL dengan rich embed format).
+  - [x] Pemicu (*Trigger*) notifikasi darurat:
+    - [x] Service mengalami restart otomatis oleh Watchdog (`NotificationService::sendServiceIncidentAlert`).
+    - [x] Penggunaan disk storage `/` melebihi ambang batas 85% (`NotificationService::sendDiskAlert`).
+    - [x] Terjadi 5x percobaan login gagal beruntun / indikasi brute-force (`NotificationService::sendBruteForceAlert` via `RateLimiter`).
+  - [x] Endpoint API pengujian notifikasi: `POST /api/settings/notifications/test` & penyimpanan `POST /api/settings/notifications/save`.
+  - [x] Pencatatan log aktivitas dan audit notifikasi ke `data/panel_notification.log`.
+- [x] **Verifikasi:**
+  - [x] Endpoint pengujian `/api/settings/notifications/test` terverifikasi merespons integrasi Telegram API secara presisi.
+  - [x] Formulir pengaturan di `/settings` berhasil menyimpan konfigurasi notifikasi ke database SQLite `settings` via AJAX dengan toast status responsif.
+  - [x] Ketiga pemicu (*Service down, Disk usage > 85%, Brute-force lockout*) telah terhubung mulus ke `NotificationService`.
 
 ---
 

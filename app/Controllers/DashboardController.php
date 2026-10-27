@@ -6,6 +6,7 @@ use App\Core\Auth;
 use App\Core\Database;
 use App\Core\Response;
 use App\Core\SystemMonitor;
+use App\Services\NotificationService;
 
 class DashboardController
 {
@@ -66,14 +67,23 @@ class DashboardController
     public function settings(): void
     {
         $settings = [
-            'panel_title'     => Database::getSetting('panel_title', 'Almusa Server Panel'),
-            'entrance_path'   => Database::getSetting('entrance_path', 'almusa'),
-            'panel_port'      => Database::getSetting('panel_port', '64448'),
-            'cf_api_token'    => Database::getSetting('cf_api_token', ''),
-            'cf_account_id'   => Database::getSetting('cf_account_id', ''),
-            'cf_tunnel_id'    => Database::getSetting('cf_tunnel_id', ''),
-            'cf_tunnel_token' => Database::getSetting('cf_tunnel_token', ''),
-            'mysql_root_pass' => Database::getSetting('mysql_root_pass', ''),
+            'panel_title'                   => Database::getSetting('panel_title', 'Almusa Server Panel'),
+            'entrance_path'                 => Database::getSetting('entrance_path', 'almusa'),
+            'panel_port'                    => Database::getSetting('panel_port', '64448'),
+            'cf_api_token'                  => Database::getSetting('cf_api_token', ''),
+            'cf_account_id'                 => Database::getSetting('cf_account_id', ''),
+            'cf_tunnel_id'                  => Database::getSetting('cf_tunnel_id', ''),
+            'cf_tunnel_token'               => Database::getSetting('cf_tunnel_token', ''),
+            'mysql_root_pass'               => Database::getSetting('mysql_root_pass', ''),
+            // Notifikasi Darurat (Telegram & Discord)
+            'notif_telegram_enabled'        => Database::getSetting('notif_telegram_enabled', '0'),
+            'notif_telegram_bot_token'      => Database::getSetting('notif_telegram_bot_token', ''),
+            'notif_telegram_chat_id'        => Database::getSetting('notif_telegram_chat_id', ''),
+            'notif_discord_enabled'         => Database::getSetting('notif_discord_enabled', '0'),
+            'notif_discord_webhook_url'     => Database::getSetting('notif_discord_webhook_url', ''),
+            'notif_trigger_service_restart' => Database::getSetting('notif_trigger_service_restart', '1'),
+            'notif_trigger_disk_usage'      => Database::getSetting('notif_trigger_disk_usage', '1'),
+            'notif_trigger_brute_force'     => Database::getSetting('notif_trigger_brute_force', '1'),
         ];
 
         Response::view('dashboard/settings', [
@@ -184,5 +194,62 @@ class DashboardController
 
         $_SESSION['settings_msg'] = 'Password berhasil diperbarui!';
         Response::redirect('/settings');
+    }
+
+    /**
+     * Save Emergency Notification Settings (Telegram & Discord)
+     */
+    public function saveNotificationSettings(): void
+    {
+        $tgEnabled    = isset($_POST['notif_telegram_enabled']) ? '1' : '0';
+        $tgToken      = trim((string)($_POST['notif_telegram_bot_token'] ?? ''));
+        $tgChatId     = trim((string)($_POST['notif_telegram_chat_id'] ?? ''));
+        $dcEnabled    = isset($_POST['notif_discord_enabled']) ? '1' : '0';
+        $dcWebhook    = trim((string)($_POST['notif_discord_webhook_url'] ?? ''));
+        $trigRestart  = isset($_POST['notif_trigger_service_restart']) ? '1' : '0';
+        $trigDisk     = isset($_POST['notif_trigger_disk_usage']) ? '1' : '0';
+        $trigBrute    = isset($_POST['notif_trigger_brute_force']) ? '1' : '0';
+
+        Database::setSetting('notif_telegram_enabled', $tgEnabled);
+        Database::setSetting('notif_telegram_bot_token', $tgToken);
+        Database::setSetting('notif_telegram_chat_id', $tgChatId);
+        Database::setSetting('notif_discord_enabled', $dcEnabled);
+        Database::setSetting('notif_discord_webhook_url', $dcWebhook);
+        Database::setSetting('notif_trigger_service_restart', $trigRestart);
+        Database::setSetting('notif_trigger_disk_usage', $trigDisk);
+        Database::setSetting('notif_trigger_brute_force', $trigBrute);
+
+        $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+            || (str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json'));
+
+        if ($isAjax) {
+            Response::json([
+                'success' => true,
+                'message' => 'Pengaturan notifikasi darurat berhasil disimpan!',
+            ]);
+            return;
+        }
+
+        $_SESSION['settings_msg'] = 'Pengaturan notifikasi darurat berhasil disimpan!';
+        Response::redirect('/settings');
+    }
+
+    /**
+     * Test notification sending (Telegram or Discord)
+     */
+    public function testNotification(): void
+    {
+        $channel = trim((string)($_POST['channel'] ?? 'telegram'));
+        $token   = trim((string)($_POST['token'] ?? ''));
+        $chatId  = trim((string)($_POST['chat_id'] ?? ''));
+        $webhook = trim((string)($_POST['webhook'] ?? ''));
+
+        if ($channel === 'discord') {
+            $res = NotificationService::testDiscord($webhook ?: null);
+        } else {
+            $res = NotificationService::testTelegram($token ?: null, $chatId ?: null);
+        }
+
+        Response::json($res);
     }
 }
