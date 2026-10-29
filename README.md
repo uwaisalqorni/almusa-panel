@@ -75,15 +75,16 @@
 
 ### 1. Jalankan Master Installer
 
- A: Automated Installation (Recommended for Linux)
-
-curl -fsSL https://bidanokta.xyz/almusa.sh | sudo bash
-
- B: Manual Installation from Source
-Di server VPS atau mesin lokal Anda, masuk ke direktori proyek dan jalankan script installer sebagai `root`:
+#### Opsi A: Instalasi Otomatis (Direkomendasikan untuk Linux VPS)
 ```bash
-https://github.com/uwaisalqorni/almusa-panel.git
-cd /home/afandi/almusa-panel
+curl -fsSL https://bidanokta.xyz/almusa.sh | sudo bash
+```
+
+#### Opsi B: Instalasi Manual dari Sumber (GitHub)
+Di server VPS atau mesin lokal Anda, clone repositori dan jalankan master installer sebagai `root`:
+```bash
+git clone https://github.com/uwaisalqorni/almusa-panel.git
+cd almusa-panel
 sudo bash scripts/install.sh
 ```
 
@@ -236,6 +237,206 @@ Silakan pilih nomor menu:
 
 ---
 
+## ⚡ Panduan Tuning Performa Maksimal (Nginx & PHP-FPM High Performance)
+
+Agar server VPS Anda mampu menangani ribuan kunjungan bersamaan (*high concurrency*) dengan penggunaan RAM dan CPU yang tetap rendah (*ultra-lightweight*), terapkan rekomendasi tuning berikut untuk Nginx dan PHP-FPM.
+
+### 1. Optimasi Global Nginx (`/etc/nginx/nginx.conf`)
+Buka file konfigurasi global Nginx dengan editor Anda (`sudo nano /etc/nginx/nginx.conf`) dan terapkan parameter berikut pada blok `main` dan `http`:
+
+```nginx
+user www-data;
+# Deteksi jumlah core CPU secara otomatis
+worker_processes auto;
+# Batas maksimal file descriptor yang dapat dibuka oleh proses worker
+worker_rlimit_nofile 65535;
+
+events {
+    # Jumlah koneksi simultan per worker process
+    worker_connections 4096;
+    # Menerima seluruh koneksi baru secara berantai
+    multi_accept on;
+    use epoll;
+}
+
+http {
+    ##
+    # Efisiensi I/O & Jaringan (Zero-Copy Transfer)
+    ##
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+
+    ##
+    # Timeout & Keepalive (Mencegah resource hung)
+    ##
+    keepalive_timeout 65;
+    keepalive_requests 1000;
+    reset_timedout_connection on;
+    client_body_timeout 15;
+    client_header_timeout 15;
+    send_timeout 15;
+
+    ##
+    # Buffer Sizes (Mencegah buffering disk sementara)
+    ##
+    client_body_buffer_size 128k;
+    client_max_body_size 50M;
+    client_header_buffer_size 1k;
+    large_client_header_buffers 4 8k;
+
+    ##
+    # Kompresi Gzip Dinamis (Menghemat bandwidth s/d 70%)
+    ##
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 256;
+    gzip_types
+        application/atom+xml
+        application/javascript
+        application/json
+        application/rss+xml
+        application/vnd.ms-fontobject
+        application/x-font-ttf
+        application/x-web-app-manifest+json
+        application/xhtml+xml
+        application/xml
+        font/opentype
+        image/svg+xml
+        image/x-icon
+        text/css
+        text/plain
+        text/x-component;
+
+    ##
+    # Cache File Descriptor Statis
+    ##
+    open_file_cache max=10000 inactive=20s;
+    open_file_cache_valid 30s;
+    open_file_cache_min_uses 2;
+    open_file_cache_errors on;
+}
+```
+
+---
+
+### 2. Tuning Pool PHP-FPM Berdasarkan Kapasitas RAM Server
+Konfigurasi default PHP-FPM sering kali terlalu boros untuk VPS kecil atau terlalu kecil untuk server besar. Sesuaikan pool PHP situs Anda (`/etc/php/8.x/fpm/pool.d/www.conf`) sesuai kapasitas RAM fisik server:
+
+#### Rumus Perhitungan `pm.max_children`:
+$$\text{Max Children} = \frac{\text{RAM yang Dialokasikan untuk PHP}}{\text{Rata-rata RAM per PHP Child Process (biasanya 35MB–50MB)}}$$
+
+#### Tabel Rekomendasi Profil PHP-FPM:
+
+| Kapasitas RAM VPS | Mode PM | `pm.max_children` | `pm.start_servers` | `pm.min_spare_servers` | `pm.max_spare_servers` | `pm.max_requests` |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **VPS 1 GB RAM** | `dynamic` | **10** | 2 | 1 | 3 | 500 |
+| **VPS 2 GB RAM** | `dynamic` | **25** | 4 | 2 | 6 | 1000 |
+| **VPS 4 GB RAM** | `dynamic` | **50** | 8 | 4 | 12 | 1500 |
+| **VPS 8 GB RAM** | `dynamic` | **100** | 16 | 8 | 24 | 2000 |
+| **VPS 16 GB+ RAM**| `static` | **150+** | - | - | - | 3000 |
+
+> [!TIP]
+> **Tuning Khusus Dedicated Pool Almusa Panel (`/www/panel/config/panel-fpm.conf`):**
+> Almusa Panel telah dirancang sangat hemat resource. Pool panel hanya membutuhkan alokasi kecil:
+> ```ini
+> pm = dynamic
+> pm.max_children = 10
+> pm.start_servers = 2
+> pm.min_spare_servers = 1
+> pm.max_spare_servers = 3
+> pm.max_requests = 500
+> ```
+
+---
+
+### 3. Konfigurasi Zend OPcache (Kecepatan Eksekusi Maksimal)
+Zend OPcache menyimpan bytecode PHP yang telah dikompilasi di dalam RAM bersama (*shared memory*), sehingga PHP tidak perlu membaca dan meng-compile script dari hard drive pada setiap request.
+
+Edit file konfigurasi OPcache (`/etc/php/8.x/fpm/conf.d/10-opcache.ini` atau `/etc/php/8.x/cli/conf.d/10-opcache.ini`):
+
+```ini
+[opcache]
+; Aktifkan OPcache untuk PHP-FPM
+opcache.enable = 1
+; Nonaktifkan di CLI kecuali dibutuhkan (menghemat RAM CLI)
+opcache.enable_cli = 0
+
+; Alokasi memori RAM untuk bytecode cache (128MB direkomendasikan untuk situs WordPress/Laravel)
+opcache.memory_consumption = 128
+
+; Alokasi memori untuk string yang sering digunakan
+opcache.interned_strings_buffer = 16
+
+; Jumlah maksimal script PHP yang dapat disimpan di cache
+opcache.max_accelerated_files = 10000
+
+; Frekuensi pengecekan perubahan file dalam detik (0 di production jika tidak sering update code)
+opcache.revalidate_freq = 60
+opcache.validate_timestamps = 1
+
+; Optimasi shutdown cepat untuk membebaskan memory
+opcache.fast_shutdown = 1
+
+; Pertahankan komentar docblock untuk framework modern (Laravel/Symfony)
+opcache.save_comments = 1
+
+; Aktifkan JIT (Just-In-Time) Compiler di PHP 8.2 / 8.3 / 8.4
+opcache.jit = 1255
+opcache.jit_buffer_size = 64M
+```
+
+---
+
+### 4. Optimasi Nginx FastCGI Buffering (Respons Cepat Anti Lag)
+Pada virtual host Nginx website Anda (`/etc/nginx/sites-available/<domain>.conf`), pastikan blok `location ~ \.php$` memiliki buffer FastCGI yang cukup agar Nginx tidak menulis respon PHP ke disk swap:
+
+```nginx
+location ~ \.php$ {
+    fastcgi_split_path_info ^(.+\.php)(/.+)$;
+    fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+    fastcgi_index index.php;
+    fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+    include fastcgi_params;
+
+    # Buffer FastCGI agar transmisi payload cepat tanpa bottleneck disk
+    fastcgi_buffer_size 32k;
+    fastcgi_buffers 16 16k;
+    fastcgi_busy_buffers_size 64k;
+    fastcgi_temp_file_write_size 64k;
+    
+    # Timeout operasi PHP panjang (cth: eksekusi backup atau laporan)
+    fastcgi_read_timeout 300;
+    fastcgi_connect_timeout 60;
+    fastcgi_send_timeout 300;
+    
+    # Sembunyikan header versi PHP untuk keamanan
+    fastcgi_hide_header X-Powered-By;
+}
+```
+
+---
+
+### 5. Cara Validasi Sintaks & Reload Tanpa Downtime
+Setelah memperbarui konfigurasi di atas, selalu uji validitas sintaks sebelum me-reload service:
+
+```bash
+# 1. Uji konfigurasi Nginx
+sudo nginx -t
+
+# 2. Uji konfigurasi PHP-FPM
+sudo php-fpm8.3 -t
+
+# 3. Reload layanan secara halus (Zero-Downtime Reload)
+sudo systemctl reload nginx
+sudo systemctl reload php8.3-fpm
+sudo systemctl reload mypanel-web
+```
+
+---
+
 ## 📂 Struktur Direktori Sistem
 
 Semua file panel kontrol terisolasi secara teratur:
@@ -265,7 +466,8 @@ Semua file panel kontrol terisolasi secara teratur:
 │   │   ├── secret.key              # Kunci Enkripsi Kredensial
 │   │   └── initial_credentials.txt # Catatan Kredensial Awal
 │   ├── docs/                       # Dokumentasi Arsitektur & Panduan
-│   │   └── SELF_UPDATER.md         # Panduan Lengkap Sistem Self-Updater
+│   │   ├── SELF_UPDATER.md         # Panduan Lengkap Sistem Self-Updater
+│   │   └── ARSITEKTUR_SSL.md       # Panduan Teknis SSL & Cloudflare Tunnel
 │   ├── public/                     # Document Root Server Built-in
 │   │   ├── index.php               # Front Controller
 │   │   └── assets/                 # CSS & Javascript Interaktif

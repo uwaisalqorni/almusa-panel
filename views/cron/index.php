@@ -241,8 +241,7 @@
                     <div class="field">
                         <label class="label" for="cronUser">Eksekusi Sebagai User</label>
                         <select id="cronUser" class="select">
-                            <option value="afandi" selected>afandi (Standar Aplikasi Web)</option>
-                            <option value="www-data">www-data (Web Server)</option>
+                            <option value="www-data" selected>www-data (Web Server / Aplikasi Standar)</option>
                             <option value="root">root (Hak Akses Penuh Sistem)</option>
                         </select>
                     </div>
@@ -413,7 +412,7 @@ function openCreateCronModal() {
     document.getElementById('cronScheduleType').value = 'daily';
     document.getElementById('cronExpression').value = '0 0 * * *';
     document.getElementById('cronCommand').value = '';
-    document.getElementById('cronUser').value = 'afandi';
+    document.getElementById('cronUser').value = 'www-data';
     document.getElementById('cronLogMode').value = 'file';
     document.getElementById('cronPresetSelect').value = '';
     document.getElementById('templatePresetBox').style.display = 'block';
@@ -429,7 +428,7 @@ function openEditCronModal(job) {
     document.getElementById('cronScheduleType').value = job.schedule_type || 'custom';
     document.getElementById('cronExpression').value = job.expression;
     document.getElementById('cronCommand').value = job.command;
-    document.getElementById('cronUser').value = job.run_as_user || 'afandi';
+    document.getElementById('cronUser').value = job.run_as_user || 'www-data';
     document.getElementById('cronLogMode').value = job.log_mode || 'file';
     document.getElementById('templatePresetBox').style.display = 'none';
 

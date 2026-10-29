@@ -6,6 +6,7 @@ implementation.md
 audit_security.md
 audit_panelsaya
 plan_self_updater.md
+catatan.txt
 
 # Runtime Panel Database & Generated Credentials
 data/*.db

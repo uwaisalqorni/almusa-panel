@@ -54,10 +54,10 @@ spl_autoload_register(function ($class) {
     }
 });
 
-// Initialize and auto-migrate database
+// Initialize and auto-migrate database (conditional to prevent request overhead)
 try {
     \App\Core\Database::init();
-    \App\Core\Database::autoMigrate();
+    \App\Core\Database::autoMigrateIfNeeded();
 } catch (\Throwable $e) {
     error_log("Failed to bootstrap Almusa Panel database: " . $e->getMessage());
 }

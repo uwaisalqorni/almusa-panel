@@ -92,7 +92,8 @@ elif [ "$SOURCE_DIR" != "/www/panel" ]; then
     cp -rf "$SOURCE_DIR"/* /www/panel/
 fi
 
-chmod 700 /www/panel/data
+chmod 770 /www/panel/data
+chown -R www-data:www-data /www/panel/data 2>/dev/null || true
 chmod +x /www/panel/cli.sh
 chmod +x /www/panel/scripts/*.sh
 find /www/panel/plugins -name "*.sh" -exec chmod +x {} +
@@ -131,8 +132,11 @@ if [ ! -f /www/panel/public/adminer/adminer-core.php ]; then
     curl -fsSL https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1-mysql.php -o /www/panel/public/adminer/adminer-core.php 2>/dev/null || true
 fi
 
-# Tulis konfigurasi Nginx untuk panel jika belum ada
-cat << EOF > /www/panel/config/nginx-panel.conf
+# Sesuaikan port pada konfigurasi Nginx panel jika sudah ada, atau buat jika belum ada
+if [ -f /www/panel/config/nginx-panel.conf ]; then
+    sed -i -E "s/listen [0-9]+/listen ${PORT}/g" /www/panel/config/nginx-panel.conf
+else
+    cat << EOF > /www/panel/config/nginx-panel.conf
 server {
     listen ${PORT} default_server;
     listen [::]:${PORT} default_server;
@@ -186,6 +190,7 @@ server {
     }
 }
 EOF
+fi
 
 # Link ke sites Nginx & conf.d
 mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d
@@ -196,7 +201,10 @@ if [ -f /www/panel/config/cloudflare-realip.conf ]; then
 fi
 
 # Hak eksekusi vhost_manager.sh untuk user worker/panel tanpa password
-PANEL_USER=$(stat -c '%U' /www/panel 2>/dev/null || echo "afandi")
+PANEL_USER=$(stat -c '%U' /www/panel 2>/dev/null || echo "www-data")
+if [ "$PANEL_USER" = "root" ]; then
+    PANEL_USER="www-data"
+fi
 if [ "$PANEL_USER" != "root" ]; then
     echo "${PANEL_USER} ALL=(ALL) NOPASSWD: /www/panel/scripts/vhost_manager.sh, $(readlink -f /www/panel)/scripts/vhost_manager.sh" > /etc/sudoers.d/almusa-panel
     chmod 0440 /etc/sudoers.d/almusa-panel

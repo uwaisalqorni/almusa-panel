@@ -35,7 +35,7 @@ EOF
         ;;
 
     run)
-        TARGET_USER="${2:-afandi}"
+        TARGET_USER="${2:-www-data}"
         shift 2
         CMD="$*"
         echo "[INFO] Executing cron command as user '$TARGET_USER': $CMD"

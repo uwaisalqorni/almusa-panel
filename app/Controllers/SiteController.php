@@ -598,7 +598,7 @@ class SiteController
             }
         }
 
-        // If not writable by www-data/afandi, enqueue background task for root daemon
+        // If not directly writable by web worker, enqueue background task for root daemon
         if (!$cleared) {
             $task = $pdo->prepare("
                 INSERT INTO tasks (title, action, payload, status)

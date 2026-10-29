@@ -54,7 +54,7 @@ class CronController
         $scheduleType = trim($_POST['schedule_type'] ?? 'custom');
         $expression = trim($_POST['expression'] ?? '* * * * *');
         $command = trim($_POST['command'] ?? '');
-        $runAsUser = trim($_POST['run_as_user'] ?? 'afandi');
+        $runAsUser = trim($_POST['run_as_user'] ?? 'www-data');
         $logMode = trim($_POST['log_mode'] ?? 'file');
 
         if (empty($name)) {
@@ -69,9 +69,10 @@ class CronController
             Response::json(['success' => false, 'error' => 'Format cron expression tidak valid. Gunakan 5 bagian standar (cth: * * * * * atau 0 0 * * *).'], 422);
         }
 
-        $validUsers = ['afandi', 'www-data', 'root'];
-        if (!in_array($runAsUser, $validUsers, true)) {
-            $runAsUser = 'afandi';
+        $currentUser = get_current_user() ?: 'www-data';
+        $validUsers = array_unique(['www-data', 'root', $currentUser]);
+        if (!in_array($runAsUser, $validUsers, true) && !@posix_getpwnam($runAsUser)) {
+            $runAsUser = 'www-data';
         }
 
         $pdo = Database::getInstance();
@@ -106,7 +107,7 @@ class CronController
         $scheduleType = trim($_POST['schedule_type'] ?? 'custom');
         $expression = trim($_POST['expression'] ?? '* * * * *');
         $command = trim($_POST['command'] ?? '');
-        $runAsUser = trim($_POST['run_as_user'] ?? 'afandi');
+        $runAsUser = trim($_POST['run_as_user'] ?? 'www-data');
         $logMode = trim($_POST['log_mode'] ?? 'file');
 
         $pdo = Database::getInstance();
@@ -130,9 +131,10 @@ class CronController
             Response::json(['success' => false, 'error' => 'Format cron expression tidak valid.'], 422);
         }
 
-        $validUsers = ['afandi', 'www-data', 'root'];
-        if (!in_array($runAsUser, $validUsers, true)) {
-            $runAsUser = 'afandi';
+        $currentUser = get_current_user() ?: 'www-data';
+        $validUsers = array_unique(['www-data', 'root', $currentUser]);
+        if (!in_array($runAsUser, $validUsers, true) && !@posix_getpwnam($runAsUser)) {
+            $runAsUser = 'www-data';
         }
 
         $update = $pdo->prepare("
@@ -234,7 +236,7 @@ class CronController
         }
 
         $command = $job['command'];
-        $user = $job['run_as_user'] ?? 'afandi';
+        $user = $job['run_as_user'] ?? 'www-data';
         $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
         $logFile = $panelRoot . "/data/cron_logs/cron_{$id}.log";
 
@@ -253,8 +255,8 @@ class CronController
             $execCmd = "bash -c " . escapeshellarg($command);
         } else {
             $execCmd = "su -s /bin/bash - " . escapeshellarg($user) . " -c " . escapeshellarg($command) . " 2>&1";
-            // If current process is already afandi and target user is afandi, run directly without su
-            $currentUser = get_current_user();
+            // If current process user matches target user, run directly without su
+            $currentUser = function_exists('posix_getpwuid') ? (@posix_getpwuid(posix_geteuid())['name'] ?? get_current_user()) : get_current_user();
             if ($currentUser === $user) {
                 $execCmd = $command;
             }
@@ -395,7 +397,7 @@ class CronController
                 $id = (int)$job['id'];
                 $name = addslashes($job['name']);
                 $expr = trim($job['expression']);
-                $user = trim($job['run_as_user'] ?: 'afandi');
+                $user = trim($job['run_as_user'] ?: 'www-data');
                 $cmd = trim($job['command']);
                 $logMode = $job['log_mode'] ?? 'file';
 

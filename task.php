@@ -256,7 +256,7 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             return "bash " . escapeshellarg($script) . " sync " . ($srcFile ? escapeshellarg($srcFile) : '');
 
         case 'cron_run':
-            $user = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['user'] ?? 'afandi'));
+            $user = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['user'] ?? 'www-data'));
             $cmd = (string)($payload['command'] ?? '');
             $script = "{$root}/scripts/cron_manager.sh";
             if (!file_exists($script) || empty($cmd)) return null;

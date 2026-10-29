@@ -42,8 +42,11 @@ rm -f /etc/systemd/system/mypanel-web.service
 rm -f /etc/systemd/system/mypanel-worker.service
 systemctl daemon-reload
 
-echo -e "${BLUE}[2/4] Menghapus symlink CLI /usr/local/bin/mypanel...${NC}"
-rm -f /usr/local/bin/mypanel
+echo -e "${BLUE}[2/4] Menghapus symlink CLI & konfigurasi sistem panel...${NC}"
+rm -f /usr/local/bin/mypanel /usr/local/bin/almusa
+rm -f /etc/sudoers.d/almusa-panel
+rm -f /etc/nginx/sites-enabled/almusa-panel.conf /etc/nginx/sites-available/almusa-panel.conf
+nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null || true
 
 echo -e "${BLUE}[3/4] Membuat arsip cadangan data penting ke /root...${NC}"
 BACKUP_FILE="/root/almusa_panel_backup_$(date +%Y%m%d_%H%M%S).tar.gz"

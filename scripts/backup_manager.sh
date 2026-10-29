@@ -8,9 +8,15 @@ ACTION="${1:-}"
 BACKUP_DIR="/www/backup"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
+# Resolve dynamic owner for backups (default www-data:www-data)
+BACKUP_OWNER=$(stat -c '%U:%G' /www/panel 2>/dev/null || echo "www-data:www-data")
+if [[ "$BACKUP_OWNER" =~ root:root ]]; then
+    BACKUP_OWNER="www-data:www-data"
+fi
+
 # Ensure backup directory exists with correct permissions
 mkdir -p "$BACKUP_DIR"
-chown afandi:afandi "$BACKUP_DIR" 2>/dev/null || true
+chown "$BACKUP_OWNER" "$BACKUP_DIR" 2>/dev/null || true
 chmod 0755 "$BACKUP_DIR"
 
 # Resolve MySQL root password
@@ -45,7 +51,7 @@ case "$ACTION" in
             --default-character-set=utf8mb4 \
             "$DB_NAME" | gzip -c > "$OUTPUT_FILE"
 
-        chown afandi:afandi "$OUTPUT_FILE" 2>/dev/null || true
+        chown "$BACKUP_OWNER" "$OUTPUT_FILE" 2>/dev/null || true
         chmod 0644 "$OUTPUT_FILE"
         SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
         echo "[SUCCESS] Database snapshot created successfully! Size: ${SIZE} | File: ${OUTPUT_FILE}"
@@ -67,7 +73,7 @@ case "$ACTION" in
             --triggers \
             --default-character-set=utf8mb4 | gzip -c > "$OUTPUT_FILE"
 
-        chown afandi:afandi "$OUTPUT_FILE" 2>/dev/null || true
+        chown "$BACKUP_OWNER" "$OUTPUT_FILE" 2>/dev/null || true
         chmod 0644 "$OUTPUT_FILE"
         SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
         echo "[SUCCESS] All databases snapshot created successfully! Size: ${SIZE} | File: ${OUTPUT_FILE}"
@@ -110,7 +116,7 @@ case "$ACTION" in
             --exclude="node_modules" \
             -C "$PARENT_DIR" "$FOLDER_NAME"
 
-        chown afandi:afandi "$OUTPUT_FILE" 2>/dev/null || true
+        chown "$BACKUP_OWNER" "$OUTPUT_FILE" 2>/dev/null || true
         chmod 0644 "$OUTPUT_FILE"
         SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
         echo "[SUCCESS] Website archive created successfully! Size: ${SIZE} | File: ${OUTPUT_FILE}"
@@ -128,7 +134,7 @@ case "$ACTION" in
             --exclude="node_modules" \
             -C /www wwwroot
 
-        chown afandi:afandi "$OUTPUT_FILE" 2>/dev/null || true
+        chown "$BACKUP_OWNER" "$OUTPUT_FILE" 2>/dev/null || true
         chmod 0644 "$OUTPUT_FILE"
         SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
         echo "[SUCCESS] All websites archive created successfully! Size: ${SIZE} | File: ${OUTPUT_FILE}"

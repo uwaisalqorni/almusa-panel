@@ -206,10 +206,10 @@ EOF
         fi
         case "$TARGET_PATH" in
             /www/wwwroot/*)
-                chown -R afandi:www-data "$TARGET_PATH" 2>/dev/null || chown -R www-data:www-data "$TARGET_PATH" 2>/dev/null || true
+                chown -R www-data:www-data "$TARGET_PATH" 2>/dev/null || true
                 find "$TARGET_PATH" -type d -exec chmod 0755 {} + 2>/dev/null || true
                 find "$TARGET_PATH" -type f -exec chmod 0644 {} + 2>/dev/null || true
-                echo "[SUCCESS] Permissions set: directories 0755, files 0644, user afandi:www-data."
+                echo "[SUCCESS] Permissions set: directories 0755, files 0644, user www-data:www-data."
                 ;;
             *)
                 echo "[ERROR] Refusing to modify permissions outside /www/wwwroot"

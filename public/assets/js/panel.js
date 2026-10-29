@@ -536,11 +536,23 @@
 
         if (document.getElementById('taskBellBtn')) {
             pollTaskStatus();
-            setInterval(pollTaskStatus, 5000);
+            setInterval(function() {
+                if (!document.hidden) pollTaskStatus();
+            }, 5000);
         }
         if (document.getElementById('headerCpuVal')) {
             updateSystemStats();
-            setInterval(updateSystemStats, 4000);
+            setInterval(function() {
+                if (!document.hidden) updateSystemStats();
+            }, 4000);
         }
+
+        // Resumable polling saat tab browser kembali aktif
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                if (document.getElementById('taskBellBtn')) pollTaskStatus();
+                if (document.getElementById('headerCpuVal')) updateSystemStats();
+            }
+        });
     });
 })();

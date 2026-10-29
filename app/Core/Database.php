@@ -156,7 +156,7 @@ class Database
             schedule_type TEXT DEFAULT 'custom',
             expression TEXT NOT NULL,
             command TEXT NOT NULL,
-            run_as_user TEXT NOT NULL DEFAULT 'afandi',
+            run_as_user TEXT NOT NULL DEFAULT 'www-data',
             log_mode TEXT NOT NULL DEFAULT 'file',
             is_enabled INTEGER DEFAULT 1,
             last_run_at DATETIME DEFAULT NULL,
@@ -250,6 +250,49 @@ SQL;
                 file_put_contents($entranceFile, $dbEntrance);
                 @chmod($entranceFile, 0600);
             }
+        }
+
+        // Simpan nomor build versi ke settings untuk menghindari autoMigrate berulang
+        $versionFile = $root . '/version.json';
+        if (file_exists($versionFile)) {
+            $vData = json_decode((string)file_get_contents($versionFile), true);
+            $currentBuild = (int)($vData['build'] ?? 0);
+            if ($currentBuild > 0) {
+                self::setSetting('installed_build', (string)$currentBuild);
+            }
+        }
+    }
+
+    /**
+     * Jalankan autoMigrate hanya jika tabel belum ada atau versi build aplikasi diperbarui.
+     * Mencegah pemborosan I/O dan DDL lock pada setiap request HTTP web panel.
+     */
+    public static function autoMigrateIfNeeded(): void
+    {
+        $pdo = self::getInstance();
+
+        try {
+            $check = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name='users' LIMIT 1");
+            if (!$check || !$check->fetch()) {
+                self::autoMigrate();
+                return;
+            }
+        } catch (\Throwable $e) {
+            self::autoMigrate();
+            return;
+        }
+
+        $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
+        $versionFile = $root . '/version.json';
+        $currentBuild = 0;
+        if (file_exists($versionFile)) {
+            $vData = json_decode((string)file_get_contents($versionFile), true);
+            $currentBuild = (int)($vData['build'] ?? 0);
+        }
+
+        $installedBuild = (int)self::getSetting('installed_build', '0');
+        if ($currentBuild > 0 && $installedBuild < $currentBuild) {
+            self::autoMigrate();
         }
     }
 
