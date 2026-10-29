@@ -72,6 +72,12 @@
 ## 🚀 Panduan Instalasi Cepat
 
 ### 1. Jalankan Master Installer
+
+ A: Automated Installation (Recommended for Linux)
+
+curl -fsSL https://bidanokta.xyz/almusa.sh | sudo bash
+
+ B: Manual Installation from Source
 Di server VPS atau mesin lokal Anda, masuk ke direktori proyek dan jalankan script installer sebagai `root`:
 
 ```bash
