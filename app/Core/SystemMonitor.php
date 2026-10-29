@@ -227,7 +227,8 @@ class SystemMonitor
     {
         switch ($service) {
             case 'nginx':
-                $out = @shell_exec("nginx -v 2>&1");
+                $bin = file_exists('/usr/sbin/nginx') ? '/usr/sbin/nginx' : (file_exists('/usr/bin/nginx') ? '/usr/bin/nginx' : 'nginx');
+                $out = @shell_exec("PATH=\$PATH:/usr/sbin:/sbin {$bin} -v 2>&1");
                 if ($out && preg_match('/nginx\/([0-9\.]+)/i', $out, $m)) {
                     return $m[1];
                 }
@@ -235,7 +236,8 @@ class SystemMonitor
 
             case 'mysql':
             case 'mariadb':
-                $out = @shell_exec("mariadb -V 2>&1 || mysql -V 2>&1");
+                $bin = file_exists('/usr/bin/mariadb') ? '/usr/bin/mariadb' : (file_exists('/usr/bin/mysql') ? '/usr/bin/mysql' : 'mariadb');
+                $out = @shell_exec("PATH=\$PATH:/usr/sbin:/sbin {$bin} -V 2>&1 || mysql -V 2>&1");
                 if ($out) {
                     if (preg_match('/(?:Distrib|from)\s+([0-9\.]+(?:-[a-zA-Z0-9]+)?)/i', $out, $m)) {
                         return $m[1];
@@ -247,7 +249,8 @@ class SystemMonitor
                 return null;
 
             case 'cloudflared':
-                $out = @shell_exec("cloudflared -v 2>&1");
+                $bin = file_exists('/usr/local/bin/cloudflared') ? '/usr/local/bin/cloudflared' : (file_exists('/usr/bin/cloudflared') ? '/usr/bin/cloudflared' : 'cloudflared');
+                $out = @shell_exec("PATH=\$PATH:/usr/local/bin {$bin} -v 2>&1");
                 if ($out && preg_match('/version\s+([0-9\.]+)/i', $out, $m)) {
                     return $m[1];
                 }
