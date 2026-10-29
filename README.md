@@ -79,8 +79,8 @@ curl -fsSL https://bidanokta.xyz/almusa.sh | sudo bash
 
  B: Manual Installation from Source
 Di server VPS atau mesin lokal Anda, masuk ke direktori proyek dan jalankan script installer sebagai `root`:
-
 ```bash
+https://github.com/uwaisalqorni/almusa-panel.git
 cd /home/afandi/almusa-panel
 sudo bash scripts/install.sh
 ```
