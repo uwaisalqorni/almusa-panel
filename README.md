@@ -1,7 +1,7 @@
 # Almusa Server Control Panel (PANEL-PHP Edition)
 
 > **Lightweight, Modular & Secure Standalone Linux Server Control Panel**  
-> Terinspirasi oleh arsitektur **basoro/slemp** dan **aaPanel**, dibangun murni menggunakan **PHP Standalone (CLI & Built-in Engine)**, **SQLite3 (PDO WAL Mode)**, **Modular Bash Scripts**, serta integrasi bawaan **Cloudflare Tunnel (`cloudflared`)**.
+> Dibangun murni menggunakan **PHP Standalone (CLI & Built-in Engine)**, **SQLite3 (PDO WAL Mode)**, **Modular Bash Scripts**, serta integrasi bawaan **Cloudflare Tunnel (`cloudflared`)**.
 
 ---
 
