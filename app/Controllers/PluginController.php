@@ -20,6 +20,7 @@ class PluginController
                 'title'       => 'Nginx Web Server',
                 'installed'   => file_exists('/usr/sbin/nginx') || SystemMonitor::isServiceActive('nginx'),
                 'active'      => SystemMonitor::isServiceActive('nginx'),
+                'version'     => SystemMonitor::getServiceVersion('nginx'),
                 'description' => 'Server HTTP/HTTPS berkecepatan tinggi & reverse proxy teruji.',
             ],
             'mysql' => [
@@ -27,6 +28,7 @@ class PluginController
                 'title'       => 'MySQL / MariaDB Engine',
                 'installed'   => file_exists('/usr/bin/mysql') || file_exists('/usr/bin/mariadb'),
                 'active'      => SystemMonitor::isServiceActive('mysql') || SystemMonitor::isServiceActive('mariadb'),
+                'version'     => SystemMonitor::getServiceVersion('mariadb'),
                 'description' => 'Database server relasional dengan strict PDO UTF8MB4.',
             ],
             'cloudflared' => [
@@ -34,6 +36,7 @@ class PluginController
                 'title'       => 'Cloudflare Tunnel Daemon',
                 'installed'   => file_exists('/usr/local/bin/cloudflared') || file_exists('/usr/bin/cloudflared'),
                 'active'      => SystemMonitor::isServiceActive('cloudflared'),
+                'version'     => SystemMonitor::getServiceVersion('cloudflared'),
                 'description' => 'Zero Trust Tunnel & Quick Tunnel trycloudflare 1-klik.',
             ],
         ];
@@ -230,6 +233,49 @@ class PluginController
         Response::json([
             'success' => true,
             'data'    => $data,
+        ]);
+    }
+
+    /**
+     * Start, stop, restart, or reload background systemd service
+     */
+    public function serviceControl(): void
+    {
+        $service = trim($_POST['service'] ?? '');
+        $action = trim($_POST['action'] ?? 'restart');
+
+        $allowedServices = ['nginx', 'mysql', 'mariadb', 'cloudflared'];
+        $isPhp = (bool)preg_match('/^php[0-9\.]+(-fpm)?$/', $service);
+
+        if (!in_array($service, $allowedServices, true) && !$isPhp) {
+            Response::json(['success' => false, 'error' => 'Service tidak valid.'], 400);
+        }
+
+        if (!in_array($action, ['start', 'stop', 'restart', 'reload'], true)) {
+            Response::json(['success' => false, 'error' => 'Aksi service tidak valid.'], 400);
+        }
+
+        $serviceTitle = match ($service) {
+            'nginx' => 'Nginx Web Server',
+            'mysql', 'mariadb' => 'MariaDB / MySQL',
+            'cloudflared' => 'Cloudflare Tunnel',
+            default => strtoupper($service),
+        };
+
+        $title = ucfirst($action) . " {$serviceTitle}";
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("
+            INSERT INTO tasks (title, action, payload, status)
+            VALUES (:title, 'service_control', :payload, 'pending')
+        ");
+        $stmt->execute([
+            ':title'   => $title,
+            ':payload' => json_encode(['service' => $service, 'action' => $action]),
+        ]);
+
+        Response::json([
+            'success' => true,
+            'message' => "Perintah '{$title}' berhasil dikirim ke daemon sistem.",
         ]);
     }
 }

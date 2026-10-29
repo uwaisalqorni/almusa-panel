@@ -219,4 +219,49 @@ class SystemMonitor
 
         return round($bytes, $precision) . ' ' . $units[$pow];
     }
+
+    /**
+     * Dapatkan versi binary service yang terpasang di sistem Linux.
+     */
+    public static function getServiceVersion(string $service): ?string
+    {
+        switch ($service) {
+            case 'nginx':
+                $out = @shell_exec("nginx -v 2>&1");
+                if ($out && preg_match('/nginx\/([0-9\.]+)/i', $out, $m)) {
+                    return $m[1];
+                }
+                return null;
+
+            case 'mysql':
+            case 'mariadb':
+                $out = @shell_exec("mariadb -V 2>&1 || mysql -V 2>&1");
+                if ($out) {
+                    if (preg_match('/(?:Distrib|from)\s+([0-9\.]+(?:-[a-zA-Z0-9]+)?)/i', $out, $m)) {
+                        return $m[1];
+                    }
+                    if (preg_match('/([0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9]+)?)/', $out, $m)) {
+                        return $m[1];
+                    }
+                }
+                return null;
+
+            case 'cloudflared':
+                $out = @shell_exec("cloudflared -v 2>&1");
+                if ($out && preg_match('/version\s+([0-9\.]+)/i', $out, $m)) {
+                    return $m[1];
+                }
+                return null;
+
+            default:
+                if (preg_match('/^php([0-9\.]+)$/', $service, $m)) {
+                    $ver = $m[1];
+                    $out = @shell_exec("php{$ver} -v 2>&1");
+                    if ($out && preg_match('/PHP\s+([0-9\.]+)/i', $out, $pm)) {
+                        return $pm[1];
+                    }
+                }
+                return null;
+        }
+    }
 }

@@ -289,6 +289,25 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             }
             return "systemctl reload " . escapeshellarg($service);
 
+        case 'service_control':
+            $service = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', (string)($payload['service'] ?? ''));
+            $action = preg_replace('/[^a-z]/', '', (string)($payload['action'] ?? 'restart'));
+            if (!in_array($action, ['start', 'stop', 'restart', 'reload'], true)) {
+                return null;
+            }
+            $allowedServices = ['nginx', 'mysql', 'mariadb', 'cloudflared'];
+            $isPhp = (bool)preg_match('/^php[0-9\.]+(-fpm)?$/', $service);
+            if (!in_array($service, $allowedServices, true) && !$isPhp) {
+                return null;
+            }
+            if ($isPhp && !str_ends_with($service, '-fpm')) {
+                $service .= '-fpm';
+            }
+            if ($service === 'mysql' || $service === 'mariadb') {
+                $service = \App\Core\SystemMonitor::isServiceActive('mariadb') ? 'mariadb' : 'mysql';
+            }
+            return "systemctl " . escapeshellarg($action) . " " . escapeshellarg($service);
+
         case 'backup_run':
             $targetType = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['target_type'] ?? 'all_db'));
             $target = (string)($payload['target'] ?? '');

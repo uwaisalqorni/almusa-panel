@@ -73,6 +73,7 @@ Router::post('/api/plugins/uninstall', [PluginController::class, 'uninstall']);
 Router::post('/api/plugins/update', [PluginController::class, 'update']);
 Router::post('/api/plugins/check-php-updates', [PluginController::class, 'checkPhpUpdates']);
 Router::post('/api/plugins/php/extension', [PluginController::class, 'manageExtension']);
+Router::post('/api/plugins/service-control', [PluginController::class, 'serviceControl']);
 
 // Nginx Global Manager
 Router::get('/api/nginx/config', [NginxController::class, 'getConfig']);

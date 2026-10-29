@@ -14,35 +14,41 @@ $statusBadge = static function (array $p, bool $hasActive = true): string {
 
 $services = [
     [
-        'key'   => 'nginx',
-        'icon'  => 'server',
-        'name'  => 'Nginx',
-        'tag'   => 'Web server & reverse proxy',
-        'desc'  => 'Web server berperforma tinggi dengan isolasi virtual host, aturan rewrite, dan HTTP/2.',
-        'badge' => $statusBadge($plugins['nginx']),
+        'key'       => 'nginx',
+        'icon'      => 'server',
+        'name'      => 'Nginx',
+        'tag'       => 'Web server & reverse proxy',
+        'desc'      => 'Web server berperforma tinggi dengan isolasi virtual host, aturan rewrite, dan HTTP/2.',
+        'version'   => $plugins['nginx']['version'] ?? null,
+        'badge'     => $statusBadge($plugins['nginx']),
         'installed' => $plugins['nginx']['installed'],
+        'active'    => $plugins['nginx']['active'],
         'install'   => 'Pasang Nginx',
         'open'      => null,
     ],
     [
-        'key'   => 'mysql',
-        'icon'  => 'database',
-        'name'  => 'MySQL / MariaDB',
-        'tag'   => 'Database relasional',
-        'desc'  => 'Mesin database dengan charset utf8mb4 bawaan, manajemen user, dan backup dump.',
-        'badge' => $statusBadge($plugins['mysql']),
+        'key'       => 'mysql',
+        'icon'      => 'database',
+        'name'      => 'MySQL / MariaDB',
+        'tag'       => 'Database relasional',
+        'desc'      => 'Mesin database dengan charset utf8mb4 bawaan, manajemen user, dan backup dump.',
+        'version'   => $plugins['mysql']['version'] ?? null,
+        'badge'     => $statusBadge($plugins['mysql']),
         'installed' => $plugins['mysql']['installed'],
+        'active'    => $plugins['mysql']['active'],
         'install'   => 'Pasang MariaDB',
         'open'      => ['/databases', 'Buka Databases'],
     ],
     [
-        'key'   => 'cloudflared',
-        'icon'  => 'cloud',
-        'name'  => 'Cloudflare Tunnel',
-        'tag'   => 'Akses online tanpa buka port',
-        'desc'  => 'Binary cloudflared untuk Quick Tunnel (trycloudflare.com) dan domain sendiri via Zero Trust.',
-        'badge' => $statusBadge($plugins['cloudflared'], false),
+        'key'       => 'cloudflared',
+        'icon'      => 'cloud',
+        'name'      => 'Cloudflare Tunnel',
+        'tag'       => 'Akses online tanpa buka port',
+        'desc'      => 'Binary cloudflared untuk Quick Tunnel (trycloudflare.com) dan domain sendiri via Zero Trust.',
+        'version'   => $plugins['cloudflared']['version'] ?? null,
+        'badge'     => $statusBadge($plugins['cloudflared'], false),
         'installed' => $plugins['cloudflared']['installed'],
+        'active'    => $plugins['cloudflared']['active'],
         'install'   => 'Unduh cloudflared',
         'open'      => ['/tunnels', 'Kelola Tunnel'],
     ],
@@ -68,32 +74,47 @@ $services = [
                 <div class="row" style="padding:0;border:0">
                     <span class="icon-tile"><?= ui_icon($s['icon']) ?></span>
                     <div class="row-main">
-                        <h2 class="row-title"><?= e($s['name']) ?></h2>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <h2 class="row-title" style="margin:0;"><?= e($s['name']) ?></h2>
+                            <?php if (!empty($s['version'])): ?>
+                                <span class="badge badge-neutral mono" style="font-size:11px; padding:2px 7px;">v<?= e($s['version']) ?></span>
+                            <?php endif; ?>
+                        </div>
                         <div class="row-sub"><?= e($s['tag']) ?></div>
                     </div>
                     <?= $s['badge'] ?>
                 </div>
                 <p class="text-2" style="font-size:13px;margin:14px 0 16px"><?= e($s['desc']) ?></p>
             </div>
-            <div class="cell-actions" style="justify-content:flex-start">
+            <div class="cell-actions" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
                 <?php if (!$s['installed']): ?>
                     <button type="button" class="btn btn-primary btn-sm" onclick="queuePluginAction('install', '<?= e($s['key']) ?>', '')">
                         <?= ui_icon('download') ?> <?= e($s['install']) ?>
                     </button>
                 <?php else: ?>
+                    <?php if ($s['active']): ?>
+                        <button type="button" class="btn btn-secondary btn-sm" title="Restart Service" onclick="controlService('<?= e($s['key']) ?>', 'restart')">
+                            <?= ui_icon('refresh') ?> Restart
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--err);" title="Hentikan Service" onclick="controlService('<?= e($s['key']) ?>', 'stop')">
+                            <?= ui_icon('stop') ?> Stop
+                        </button>
+                    <?php else: ?>
+                        <button type="button" class="btn btn-primary btn-sm" title="Jalankan Service" onclick="controlService('<?= e($s['key']) ?>', 'start')">
+                            <?= ui_icon('play') ?> Start
+                        </button>
+                    <?php endif; ?>
+
                     <?php if ($s['key'] === 'nginx'): ?>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="openNginxModal()">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="openNginxModal()">
                             <?= ui_icon('sliders') ?> Kelola Nginx
                         </button>
                     <?php endif; ?>
                     <?php if ($s['open']): ?>
                         <a href="<?= e($s['open'][0]) ?>" class="btn btn-secondary btn-sm"><?= e($s['open'][1]) ?></a>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="queuePluginAction('install', '<?= e($s['key']) ?>', '')">
-                        <?= ui_icon('refresh') ?> Pasang ulang
-                    </button>
-                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="queuePluginAction('uninstall', '<?= e($s['key']) ?>', '')">
-                        Hapus
+                    <button type="button" class="btn btn-ghost btn-sm text-dim" title="Pasang ulang paket" onclick="queuePluginAction('install', '<?= e($s['key']) ?>', '')">
+                        Reinstall
                     </button>
                 <?php endif; ?>
             </div>
@@ -180,6 +201,10 @@ $services = [
 
                                     <button type="button" class="btn btn-secondary btn-sm" onclick="openExtModal(<?= js_arg($ver) ?>)">
                                         <?= ui_icon('puzzle') ?> Ekstensi
+                                    </button>
+                                    <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Restart PHP-FPM <?= e($ver) ?>" aria-label="Restart PHP-FPM <?= e($ver) ?>"
+                                            onclick="controlService('php<?= e($ver) ?>-fpm', 'restart')">
+                                        <?= ui_icon('refresh') ?>
                                     </button>
                                     <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Hapus PHP <?= e($ver) ?>" aria-label="Hapus PHP <?= e($ver) ?>"
                                             onclick="queuePluginAction('uninstall', 'php', <?= js_arg($ver) ?>)">
@@ -276,6 +301,54 @@ async function openExtModal(ver) {
         else Almusa.toast(data.error || 'Gagal memasang ekstensi.', 'error');
     } catch (err) {
         Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+    }
+}
+
+async function controlService(service, action) {
+    var serviceNames = {
+        nginx: 'Nginx Web Server',
+        mysql: 'MySQL / MariaDB Database',
+        mariadb: 'MariaDB Database',
+        cloudflared: 'Cloudflare Tunnel'
+    };
+    var sTitle = serviceNames[service] || service;
+    var actionLabels = {
+        restart: 'Restart',
+        stop: 'Hentikan (Stop)',
+        start: 'Jalankan (Start)',
+        reload: 'Reload'
+    };
+    var aLabel = actionLabels[action] || action;
+    var title = aLabel + ' ' + sTitle;
+    var message = 'Sistem akan mengeksekusi perintah ' + action.toUpperCase() + ' pada service ' + sTitle + '.';
+    var danger = action === 'stop';
+
+    if (service === 'nginx' && action === 'stop') {
+        danger = true;
+        message = 'PERINGATAN KRUSIAL: Almusa Panel berjalan di atas web server Nginx (Port 64448). Jika Anda menghentikan (STOP) Nginx, antarmuka web panel ini AKAN IKUT MATI dan Anda harus menjalankannya kembali secara manual via terminal SSH (mypanel start / sudo systemctl start nginx). Yakin ingin menghentikan Nginx?';
+    } else if ((service === 'mysql' || service === 'mariadb') && action === 'stop') {
+        danger = true;
+        message = 'PERINGATAN: Menghentikan database MariaDB/MySQL akan menyebabkan semua website berbasis database (WordPress, Laravel, dll) mengalami Database Connection Error. Yakin ingin menghentikan?';
+    }
+
+    var ok = await Almusa.confirm({
+        title: title,
+        message: message,
+        confirmText: action === 'stop' ? 'Ya, Hentikan Service' : (action === 'restart' ? 'Restart Sekarang' : 'Start'),
+        danger: danger
+    });
+    if (!ok) return;
+
+    try {
+        var res = await Almusa.post('/api/plugins/service-control', { service: service, action: action });
+        if (res.success) {
+            openTaskTerminal();
+            Almusa.toast(res.message || 'Perintah service dijadwalkan.', 'info');
+        } else {
+            Almusa.toast(res.error || 'Gagal mengeksekusi service.', 'error');
+        }
+    } catch (e) {
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
     }
 }
 </script>
