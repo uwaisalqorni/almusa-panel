@@ -176,12 +176,140 @@ case "$ACTION" in
         fi
 
         # Update SQLite record
+        sqlite3 "$DB_FILE" "UPDATE sites SET ssl_enabled = 1, ssl_provider = 'letsencrypt' WHERE domain = '${DOMAIN}';" 2>/dev/null || \
         sqlite3 "$DB_FILE" "UPDATE sites SET ssl_enabled = 1 WHERE domain = '${DOMAIN}';"
 
         # Setup auto-renewal timer
         ensure_autorenew
 
         echo "[SUCCESS] Let's Encrypt SSL has been successfully issued and activated for ${DOMAIN}!"
+        ;;
+
+    custom)
+        echo "[INFO] Starting Custom / Paid SSL installation for domain: $DOMAIN..."
+        CERT_SRC="${3:-}"
+        KEY_SRC="${4:-}"
+        FORCE_HTTPS="${5:-1}"
+
+        if [ -z "$CERT_SRC" ] || [ ! -f "$CERT_SRC" ]; then
+            echo "[ERROR] Certificate staging file '$CERT_SRC' does not exist."
+            exit 1
+        fi
+
+        if [ -z "$KEY_SRC" ] || [ ! -f "$KEY_SRC" ]; then
+            echo "[ERROR] Private key staging file '$KEY_SRC' does not exist."
+            exit 1
+        fi
+
+        echo "[INFO] Validating Certificate and Private Key syntax..."
+        if ! openssl x509 -in "$CERT_SRC" -noout >/dev/null 2>&1; then
+            echo "[ERROR] Invalid SSL Certificate format. Pastikan format PEM (x509) valid."
+            rm -f "$CERT_SRC" "$KEY_SRC" 2>/dev/null || true
+            exit 1
+        fi
+
+        if ! openssl pkey -in "$KEY_SRC" -noout >/dev/null 2>&1 && ! openssl rsa -in "$KEY_SRC" -check -noout >/dev/null 2>&1; then
+            echo "[ERROR] Invalid Private Key format. Pastikan private key tanpa passphrase."
+            rm -f "$CERT_SRC" "$KEY_SRC" 2>/dev/null || true
+            exit 1
+        fi
+
+        # Check modulus / match between cert and key
+        CERT_MOD=$(openssl x509 -noout -modulus -in "$CERT_SRC" 2>/dev/null | openssl md5 2>/dev/null || true)
+        KEY_MOD=$( (openssl rsa -noout -modulus -in "$KEY_SRC" 2>/dev/null || openssl ec -noout -modulus -in "$KEY_SRC" 2>/dev/null || true) | openssl md5 2>/dev/null || true )
+        if [ -n "$CERT_MOD" ] && [ -n "$KEY_MOD" ] && [ "$CERT_MOD" != "$KEY_MOD" ]; then
+            echo "[ERROR] Certificate dan Private Key tidak cocok!"
+            rm -f "$CERT_SRC" "$KEY_SRC" 2>/dev/null || true
+            exit 1
+        fi
+
+        CUSTOM_DIR="/etc/ssl/almusa/${DOMAIN}"
+        mkdir -p "$CUSTOM_DIR"
+        chmod 755 /etc/ssl/almusa 2>/dev/null || true
+        chmod 755 "$CUSTOM_DIR" 2>/dev/null || true
+
+        CERT_FILE="${CUSTOM_DIR}/fullchain.pem"
+        KEY_FILE="${CUSTOM_DIR}/privkey.pem"
+
+        cp -f "$CERT_SRC" "$CERT_FILE"
+        cp -f "$KEY_SRC" "$KEY_FILE"
+        chmod 644 "$CERT_FILE"
+        chmod 600 "$KEY_FILE"
+        rm -f "$CERT_SRC" "$KEY_SRC" 2>/dev/null || true
+
+        # Retrieve site properties from database
+        SITE_INFO=$(sqlite3 "$DB_FILE" "SELECT docroot, php_version, rewrite_template, aliases FROM sites WHERE domain = '${DOMAIN}' LIMIT 1;" 2>/dev/null || true)
+        if [ -n "$SITE_INFO" ]; then
+            IFS='|' read -r DB_DOCROOT DB_PHP DB_REWRITE DB_ALIASES <<< "$SITE_INFO"
+            DOCROOT="${DB_DOCROOT:-/www/wwwroot/${DOMAIN}}"
+            PHP_VER="${DB_PHP:-8.3}"
+            REWRITE="${DB_REWRITE:-default}"
+            ALIASES="${DB_ALIASES:-}"
+        else
+            DOCROOT="/www/wwwroot/${DOMAIN}"
+            PHP_VER="8.3"
+            REWRITE="default"
+            ALIASES=""
+        fi
+
+        echo "[INFO] Document root: $DOCROOT"
+        echo "[INFO] Certificate path: $CERT_FILE"
+        echo "[INFO] Private key path : $KEY_FILE"
+
+        echo "[INFO] Generating SSL-enabled Nginx configuration..."
+        PHP_SOCK="unix:/run/php/php${PHP_VER}-fpm.sock"
+        REWRITE_CONF="${PANEL_ROOT}/rewrite/nginx/${REWRITE}.conf"
+        if [ ! -f "$REWRITE_CONF" ]; then
+            REWRITE_CONF="${PANEL_ROOT}/rewrite/nginx/default.conf"
+        fi
+
+        ACCESS_LOG="/var/log/nginx/${DOMAIN}_access.log"
+        ERROR_LOG="/var/log/nginx/${DOMAIN}_error.log"
+
+        TEMPLATE="${PANEL_ROOT}/plugins/nginx/conf/vhost_ssl_template.conf"
+        TEST_FILE="${CONF_FILE}.ssl_test"
+        BACKUP_FILE="${CONF_FILE}.pre_ssl.bak"
+
+        cp "$CONF_FILE" "$BACKUP_FILE" 2>/dev/null || true
+
+        sed \
+            -e "s|{{DOMAIN}}|${DOMAIN}|g" \
+            -e "s|{{ALIASES}}|${ALIASES}|g" \
+            -e "s|{{DOCROOT}}|${DOCROOT}|g" \
+            -e "s|{{PHP_SOCK}}|${PHP_SOCK}|g" \
+            -e "s|{{REWRITE_CONF}}|${REWRITE_CONF}|g" \
+            -e "s|{{ACCESS_LOG}}|${ACCESS_LOG}|g" \
+            -e "s|{{ERROR_LOG}}|${ERROR_LOG}|g" \
+            -e "s|{{SSL_CERT}}|${CERT_FILE}|g" \
+            -e "s|{{SSL_KEY}}|${KEY_FILE}|g" \
+            "$TEMPLATE" > "$TEST_FILE"
+
+        ln -sf "$TEST_FILE" "$LINK_FILE"
+
+        if command -v nginx >/dev/null 2>&1; then
+            echo "[INFO] Testing Nginx configuration with Custom SSL..."
+            if nginx -t; then
+                mv -f "$TEST_FILE" "$CONF_FILE"
+                ln -sf "$CONF_FILE" "$LINK_FILE"
+                rm -f "$BACKUP_FILE"
+                echo "[INFO] Reloading Nginx service..."
+                systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true
+            else
+                echo "[ERROR] Nginx test failed. Rolling back configuration..."
+                rm -f "$TEST_FILE"
+                if [ -f "$BACKUP_FILE" ]; then
+                    mv -f "$BACKUP_FILE" "$CONF_FILE"
+                    ln -sf "$CONF_FILE" "$LINK_FILE"
+                fi
+                exit 1
+            fi
+        fi
+
+        # Update SQLite record
+        sqlite3 "$DB_FILE" "UPDATE sites SET ssl_enabled = 1, ssl_provider = 'custom' WHERE domain = '${DOMAIN}';" 2>/dev/null || \
+        sqlite3 "$DB_FILE" "UPDATE sites SET ssl_enabled = 1 WHERE domain = '${DOMAIN}';"
+
+        echo "[SUCCESS] Custom / Paid SSL certificate has been successfully configured and activated for ${DOMAIN}!"
         ;;
 
     disable)
@@ -251,7 +379,13 @@ case "$ACTION" in
         ;;
 
     renew)
-        echo "[INFO] Renewing SSL certificate for domain: $DOMAIN..."
+        echo "[INFO] Checking SSL certificate renewal for domain: $DOMAIN..."
+        if [ -f "/etc/ssl/almusa/${DOMAIN}/fullchain.pem" ]; then
+            echo "[INFO] Domain '$DOMAIN' menggunakan sertifikat Custom / Berbayar (bukan Let's Encrypt)."
+            echo "[INFO] Sertifikat komersial/custom harus diperbarui melalui form 'Custom / Paid SSL' di panel."
+            exit 0
+        fi
+
         ensure_certbot
         certbot renew --cert-name "$DOMAIN" --non-interactive
         fix_cert_permissions
@@ -263,16 +397,19 @@ case "$ACTION" in
         ;;
 
     status)
-        CERT_FILE="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+        CERT_FILE="/etc/ssl/almusa/${DOMAIN}/fullchain.pem"
+        if [ ! -f "$CERT_FILE" ]; then
+            CERT_FILE="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+        fi
         if [ -f "$CERT_FILE" ]; then
             openssl x509 -in "$CERT_FILE" -noout -subject -issuer -dates
         else
-            echo "[INFO] No Let's Encrypt certificate found for ${DOMAIN}."
+            echo "[INFO] No SSL certificate found for ${DOMAIN}."
         fi
         ;;
 
     *)
-        echo "Usage: $0 {issue|disable|renew|status} <domain> [docroot] [email] [force_https]"
+        echo "Usage: $0 {issue|custom|disable|renew|status} <domain> [docroot/cert_file] [email/key_file] [force_https]"
         exit 1
         ;;
 esac

@@ -203,6 +203,15 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             if (!file_exists($script)) return null;
             return "bash " . escapeshellarg($script) . " issue " . escapeshellarg($domain) . " " . escapeshellarg($docroot) . " " . escapeshellarg($email) . " " . escapeshellarg($forceHttps);
 
+        case 'site_custom_ssl':
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
+            $certFile = (string)($payload['cert_file'] ?? '');
+            $keyFile = (string)($payload['key_file'] ?? '');
+            $forceHttps = !empty($payload['force_https']) ? '1' : '0';
+            $script = "{$root}/scripts/ssl_manager.sh";
+            if (!file_exists($script) || !file_exists($certFile) || !file_exists($keyFile)) return null;
+            return "bash " . escapeshellarg($script) . " custom " . escapeshellarg($domain) . " " . escapeshellarg($certFile) . " " . escapeshellarg($keyFile) . " " . escapeshellarg($forceHttps);
+
         case 'site_disable_ssl':
             $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
             $script = "{$root}/scripts/ssl_manager.sh";
@@ -316,11 +325,14 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             if (!file_exists($script)) return null;
             return "bash " . escapeshellarg($script) . " install";
 
-        case 'watchdog_action':
-            $sub = preg_replace('/[^a-z]/', '', (string)($payload['command'] ?? 'run'));
-            $script = "{$root}/scripts/watchdog_manager.sh";
-            if (!file_exists($script)) return null;
-            return "bash " . escapeshellarg($script) . " " . escapeshellarg($sub);
+        case 'laravel_artisan':
+            $projectPath = (string)($payload['project_path'] ?? '');
+            $phpVer = preg_replace('/[^0-9\.]/', '', (string)($payload['php_version'] ?? '8.3'));
+            $cmd = preg_replace('/[^a-zA-Z0-9_\-:]/', '', (string)($payload['command'] ?? 'migrate'));
+            $extra = preg_replace('/[^a-zA-Z0-9_\-=]/', '', (string)($payload['extra_args'] ?? ''));
+            $script = "{$root}/scripts/artisan_manager.sh";
+            if (!file_exists($script) || empty($projectPath)) return null;
+            return "bash " . escapeshellarg($script) . " run " . escapeshellarg($projectPath) . " " . escapeshellarg($phpVer) . " " . escapeshellarg($cmd) . ($extra !== '' ? " " . escapeshellarg($extra) : "");
 
         default:
             return null;

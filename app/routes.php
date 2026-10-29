@@ -37,9 +37,13 @@ Router::post('/api/sites/delete', [SiteController::class, 'delete']);
 Router::post('/api/sites/issue-ssl', [SiteController::class, 'issueSsl']);
 Router::post('/api/sites/disable-ssl', [SiteController::class, 'disableSsl']);
 Router::post('/api/sites/renew-ssl', [SiteController::class, 'renewSsl']);
+Router::post('/api/sites/custom-ssl', [SiteController::class, 'saveCustomSsl']);
 Router::get('/api/sites/ssl-status', [SiteController::class, 'sslStatus']);
 Router::get('/api/sites/logs', [SiteController::class, 'getLogs']);
 Router::post('/api/sites/clear-log', [SiteController::class, 'clearLog']);
+Router::get('/api/sites/laravel/status', [SiteController::class, 'laravelStatus']);
+Router::post('/api/sites/laravel/connect-db', [SiteController::class, 'laravelConnectDb']);
+Router::post('/api/sites/laravel/artisan', [SiteController::class, 'laravelRunArtisan']);
 
 // File Manager & Config Editor
 Router::get('/sites/files', [FileManagerController::class, 'index']);

@@ -93,6 +93,7 @@ class Database
             php_version TEXT NOT NULL DEFAULT '8.3',
             rewrite_template TEXT DEFAULT 'default',
             ssl_enabled INTEGER DEFAULT 0,
+            ssl_provider TEXT DEFAULT 'letsencrypt',
             tunnel_mode TEXT DEFAULT 'none',
             tunnel_url TEXT DEFAULT '',
             status TEXT DEFAULT 'active',
@@ -193,6 +194,11 @@ class Database
 SQL;
 
         $pdo->exec($schema);
+
+        // Migrate existing databases to add ssl_provider if missing
+        try {
+            $pdo->exec("ALTER TABLE sites ADD COLUMN ssl_provider TEXT DEFAULT 'letsencrypt'");
+        } catch (\Throwable $e) {}
 
         // Seed default admin and settings if not present
         $stmt = $pdo->query("SELECT COUNT(*) AS total FROM users");

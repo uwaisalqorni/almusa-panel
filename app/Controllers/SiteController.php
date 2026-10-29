@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Database;
+use App\Core\EnvManager;
 use App\Core\Response;
 
 class SiteController
@@ -13,6 +14,13 @@ class SiteController
         $pdo = Database::getInstance();
         $sites = $pdo->query("SELECT * FROM sites ORDER BY id DESC")->fetchAll();
 
+        foreach ($sites as &$site) {
+            $site['is_laravel'] = ($site['rewrite_template'] === 'laravel') || EnvManager::isLaravelProject($site['docroot']);
+        }
+        unset($site);
+
+        $databases = $pdo->query("SELECT id, db_name, db_user, charset, access_host FROM databases ORDER BY db_name ASC")->fetchAll();
+
         $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
         $rewrites = ['default', 'laravel', 'wordpress', 'thinkphp'];
 
@@ -20,6 +28,7 @@ class SiteController
             'title'       => 'Websites & Virtual Hosts',
             'user'        => Auth::user(),
             'sites'       => $sites,
+            'databases'   => $databases,
             'phpVersions' => $phpVersions,
             'rewrites'    => $rewrites,
         ]);
@@ -324,6 +333,94 @@ class SiteController
         ]);
     }
 
+    public function saveCustomSsl(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $cert = trim($_POST['certificate'] ?? '');
+        $key = trim($_POST['private_key'] ?? '');
+        $forceHttps = !isset($_POST['force_https']) || !empty($_POST['force_https']) ? 1 : 0;
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $domain = $site['domain'];
+
+        if (empty($cert)) {
+            Response::json(['success' => false, 'error' => 'Sertifikat SSL (Certificate) tidak boleh kosong.'], 400);
+        }
+        if (empty($key)) {
+            Response::json(['success' => false, 'error' => 'Private Key tidak boleh kosong.'], 400);
+        }
+
+        // Validate certificate format
+        if (!str_contains($cert, 'BEGIN CERTIFICATE')) {
+            Response::json(['success' => false, 'error' => 'Format Sertifikat tidak valid. Harus menyertakan "-----BEGIN CERTIFICATE-----".'], 400);
+        }
+
+        $certData = @openssl_x509_parse($cert);
+        if (!$certData) {
+            Response::json(['success' => false, 'error' => 'Sertifikat SSL tidak valid atau rusak (gagal diparse oleh OpenSSL).'], 400);
+        }
+
+        // Validate private key
+        $keyResource = @openssl_pkey_get_private($key);
+        if (!$keyResource) {
+            Response::json(['success' => false, 'error' => 'Format Private Key tidak valid atau terproteksi passphrase. Pastikan private key tanpa passphrase.'], 400);
+        }
+
+        // Verify key matches certificate
+        if (!@openssl_x509_check_private_key($cert, $key)) {
+            Response::json(['success' => false, 'error' => 'Private Key tidak cocok dengan Sertifikat SSL yang dimasukkan!'], 400);
+        }
+
+        // Write to staging files in /tmp with strict permissions
+        $tmpDir = sys_get_temp_dir() . '/almusa_ssl_' . uniqid();
+        if (!@mkdir($tmpDir, 0700, true)) {
+            Response::json(['success' => false, 'error' => 'Gagal membuat direktori staging sementara.'], 500);
+        }
+
+        $certTmp = $tmpDir . '/cert.pem';
+        $keyTmp  = $tmpDir . '/key.pem';
+
+        if (@file_put_contents($certTmp, $cert . "\n") === false || @file_put_contents($keyTmp, $key . "\n") === false) {
+            @unlink($certTmp);
+            @unlink($keyTmp);
+            @rmdir($tmpDir);
+            Response::json(['success' => false, 'error' => 'Gagal menulis file staging sertifikat.'], 500);
+        }
+
+        @chmod($certTmp, 0644);
+        @chmod($keyTmp, 0600);
+
+        // Enqueue background task for root daemon
+        $task = $pdo->prepare("
+            INSERT INTO tasks (title, action, payload, status)
+            VALUES (:title, 'site_custom_ssl', :payload, 'pending')
+        ");
+        $task->execute([
+            ':title'   => "Pasang Custom / Paid SSL: {$domain}",
+            ':payload' => json_encode([
+                'site_id'     => $siteId,
+                'domain'      => $domain,
+                'cert_file'   => $certTmp,
+                'key_file'    => $keyTmp,
+                'force_https' => $forceHttps,
+            ]),
+        ]);
+
+        Response::json([
+            'success' => true,
+            'message' => "Pemasangan Custom SSL untuk '{$domain}' dijadwalkan di background queue.",
+            'task_id' => (int)$pdo->lastInsertId(),
+        ]);
+    }
+
     public function sslStatus(): void
     {
         $siteId = (int)($_GET['site_id'] ?? 0);
@@ -338,10 +435,36 @@ class SiteController
         }
 
         $domain = $site['domain'];
-        $certPath = "/etc/letsencrypt/live/{$domain}/fullchain.pem";
-        $keyPath = "/etc/letsencrypt/live/{$domain}/privkey.pem";
+        $dbProvider = (string)($site['ssl_provider'] ?? '');
 
-        $hasCert = file_exists($certPath) && file_exists($keyPath);
+        $customCertPath = "/etc/ssl/almusa/{$domain}/fullchain.pem";
+        $customKeyPath  = "/etc/ssl/almusa/{$domain}/privkey.pem";
+        $leCertPath     = "/etc/letsencrypt/live/{$domain}/fullchain.pem";
+        $leKeyPath      = "/etc/letsencrypt/live/{$domain}/privkey.pem";
+
+        $provider = 'none';
+        $certPath = '';
+        $keyPath = '';
+
+        if ($dbProvider === 'custom' && file_exists($customCertPath) && file_exists($customKeyPath)) {
+            $certPath = $customCertPath;
+            $keyPath  = $customKeyPath;
+            $provider = 'custom';
+        } elseif ($dbProvider === 'letsencrypt' && file_exists($leCertPath) && file_exists($leKeyPath)) {
+            $certPath = $leCertPath;
+            $keyPath  = $leKeyPath;
+            $provider = 'letsencrypt';
+        } elseif (file_exists($customCertPath) && file_exists($customKeyPath)) {
+            $certPath = $customCertPath;
+            $keyPath  = $customKeyPath;
+            $provider = 'custom';
+        } elseif (file_exists($leCertPath) && file_exists($leKeyPath)) {
+            $certPath = $leCertPath;
+            $keyPath  = $leKeyPath;
+            $provider = 'letsencrypt';
+        }
+
+        $hasCert = ($provider !== 'none');
         $details = null;
 
         if ($hasCert) {
@@ -354,7 +477,7 @@ class SiteController
                     $now = time();
                     $daysLeft = (int)ceil(($validTo - $now) / 86400);
 
-                    $issuer = $certData['issuer']['O'] ?? $certData['issuer']['CN'] ?? 'Let\'s Encrypt';
+                    $issuer = $certData['issuer']['O'] ?? $certData['issuer']['CN'] ?? ($provider === 'custom' ? 'Custom Certificate' : 'Let\'s Encrypt');
                     $subject = $certData['subject']['CN'] ?? $domain;
 
                     $details = [
@@ -376,6 +499,7 @@ class SiteController
             'domain'      => $domain,
             'ssl_enabled' => (int)($site['ssl_enabled'] ?? 0) === 1,
             'has_cert'    => $hasCert,
+            'provider'    => $provider,
             'details'     => $details,
         ]);
     }
@@ -545,4 +669,161 @@ class SiteController
         $lineList = array_filter($lineList, static fn($l) => trim($l) !== '');
         return array_values(array_slice($lineList, -$lines));
     }
+
+    /**
+     * Get Laravel status, project path, .env DB settings, and available databases
+     */
+    public function laravelStatus(): void
+    {
+        $siteId = (int)($_GET['site_id'] ?? 0);
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $projectPath = EnvManager::resolveProjectRoot($site['docroot']);
+        $isLaravel = EnvManager::isLaravelProject($site['docroot']);
+        $envConfig = EnvManager::getDbConfig($site['docroot']);
+
+        // Mask password for display
+        $maskedConfig = $envConfig;
+        if (!empty($maskedConfig['password'])) {
+            $maskedConfig['password_masked'] = str_repeat('•', min(8, strlen($maskedConfig['password'])));
+            unset($maskedConfig['password']);
+        }
+
+        $databases = $pdo->query("SELECT id, db_name, db_user, charset, access_host FROM databases ORDER BY db_name ASC")->fetchAll();
+
+        Response::json([
+            'success'      => true,
+            'site_id'      => $siteId,
+            'domain'       => $site['domain'],
+            'docroot'      => $site['docroot'],
+            'project_path' => $projectPath,
+            'php_version'  => $site['php_version'],
+            'is_laravel'   => $isLaravel,
+            'env_config'   => $maskedConfig,
+            'databases'    => $databases,
+        ]);
+    }
+
+    /**
+     * Connect a panel MySQL database directly into Laravel's .env file
+     */
+    public function laravelConnectDb(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $dbId = (int)($_POST['database_id'] ?? 0);
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $stmtDb = $pdo->prepare("SELECT * FROM databases WHERE id = :id LIMIT 1");
+        $stmtDb->execute([':id' => $dbId]);
+        $db = $stmtDb->fetch();
+
+        if (!$db) {
+            Response::json(['success' => false, 'error' => 'Database tidak ditemukan di panel.'], 404);
+        }
+
+        $plainPass = base64_decode((string)$db['db_password_enc']);
+        $projectPath = EnvManager::resolveProjectRoot($site['docroot']);
+
+        $updated = EnvManager::updateEnv($projectPath, [
+            'DB_CONNECTION' => 'mysql',
+            'DB_HOST'       => '127.0.0.1',
+            'DB_PORT'       => (string)($db['db_port'] ?? '3306'),
+            'DB_DATABASE'   => $db['db_name'],
+            'DB_USERNAME'   => $db['db_user'],
+            'DB_PASSWORD'   => $plainPass,
+        ]);
+
+        if (!$updated) {
+            Response::json(['success' => false, 'error' => 'Gagal memperbarui file .env proyek.'], 500);
+        }
+
+        Response::json([
+            'success' => true,
+            'message' => "File .env berhasil disinkronkan dengan database MySQL '{$db['db_name']}'!",
+            'db_name' => $db['db_name'],
+            'db_user' => $db['db_user'],
+        ]);
+    }
+
+    /**
+     * Dispatch background task for artisan command
+     */
+    public function laravelRunArtisan(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $command = trim($_POST['command'] ?? 'migrate');
+        $extraArgs = trim($_POST['extra_args'] ?? '');
+
+        $allowedCmds = [
+            'migrate',
+            'migrate:status',
+            'migrate:rollback',
+            'migrate:fresh',
+            'db:seed',
+            'optimize:clear',
+            'config:cache',
+            'route:cache',
+            'view:cache',
+            'key:generate',
+            'storage:link',
+        ];
+
+        if (!in_array($command, $allowedCmds, true)) {
+            Response::json(['success' => false, 'error' => 'Perintah artisan tidak diizinkan.'], 400);
+        }
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $projectPath = EnvManager::resolveProjectRoot($site['docroot']);
+        $domain = $site['domain'];
+        $phpVer = $site['php_version'] ?? '8.3';
+
+        // Enqueue background task
+        $task = $pdo->prepare("
+            INSERT INTO tasks (title, action, payload, status)
+            VALUES (:title, 'laravel_artisan', :payload, 'pending')
+        ");
+        $task->execute([
+            ':title'   => "Laravel Artisan: {$command}" . ($extraArgs ? " {$extraArgs}" : "") . " [{$domain}]",
+            ':payload' => json_encode([
+                'site_id'      => $siteId,
+                'domain'       => $domain,
+                'project_path' => $projectPath,
+                'php_version'  => $phpVer,
+                'command'      => $command,
+                'extra_args'   => $extraArgs,
+            ]),
+        ]);
+
+        $taskId = (int)$pdo->lastInsertId();
+
+        Response::json([
+            'success' => true,
+            'message' => "Perintah 'php artisan {$command}' telah dijadwalkan di background queue.",
+            'task_id' => $taskId,
+        ]);
+    }
 }
+
