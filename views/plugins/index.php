@@ -14,43 +14,46 @@ $statusBadge = static function (array $p, bool $hasActive = true): string {
 
 $services = [
     [
-        'key'       => 'nginx',
-        'icon'      => 'server',
-        'name'      => 'Nginx',
-        'tag'       => 'Web server & reverse proxy',
-        'desc'      => 'Web server berperforma tinggi dengan isolasi virtual host, aturan rewrite, dan HTTP/2.',
-        'version'   => $plugins['nginx']['version'] ?? null,
-        'badge'     => $statusBadge($plugins['nginx']),
-        'installed' => $plugins['nginx']['installed'],
-        'active'    => $plugins['nginx']['active'],
-        'install'   => 'Pasang Nginx',
-        'open'      => null,
+        'key'                 => 'nginx',
+        'icon'                => 'server',
+        'name'                => 'Nginx',
+        'tag'                 => 'Web server & reverse proxy',
+        'desc'                => 'Web server berperforma tinggi dengan isolasi virtual host, aturan rewrite, dan HTTP/2.',
+        'version'             => $plugins['nginx']['version'] ?? null,
+        'badge'               => $statusBadge($plugins['nginx']),
+        'installed'           => $plugins['nginx']['installed'],
+        'active'              => $plugins['nginx']['active'],
+        'has_service_control' => true,
+        'install'             => 'Pasang Nginx',
+        'open'                => null,
     ],
     [
-        'key'       => 'mysql',
-        'icon'      => 'database',
-        'name'      => 'MySQL / MariaDB',
-        'tag'       => 'Database relasional',
-        'desc'      => 'Mesin database dengan charset utf8mb4 bawaan, manajemen user, dan backup dump.',
-        'version'   => $plugins['mysql']['version'] ?? null,
-        'badge'     => $statusBadge($plugins['mysql']),
-        'installed' => $plugins['mysql']['installed'],
-        'active'    => $plugins['mysql']['active'],
-        'install'   => 'Pasang MariaDB',
-        'open'      => ['/databases', 'Buka Databases'],
+        'key'                 => 'mysql',
+        'icon'                => 'database',
+        'name'                => 'MySQL / MariaDB',
+        'tag'                 => 'Database relasional',
+        'desc'                => 'Mesin database dengan charset utf8mb4 bawaan, manajemen user, dan backup dump.',
+        'version'             => $plugins['mysql']['version'] ?? null,
+        'badge'               => $statusBadge($plugins['mysql']),
+        'installed'           => $plugins['mysql']['installed'],
+        'active'              => $plugins['mysql']['active'],
+        'has_service_control' => true,
+        'install'             => 'Pasang MariaDB',
+        'open'                => ['/databases', 'Buka Databases'],
     ],
     [
-        'key'       => 'cloudflared',
-        'icon'      => 'cloud',
-        'name'      => 'Cloudflare Tunnel',
-        'tag'       => 'Akses online tanpa buka port',
-        'desc'      => 'Binary cloudflared untuk Quick Tunnel (trycloudflare.com) dan domain sendiri via Zero Trust.',
-        'version'   => $plugins['cloudflared']['version'] ?? null,
-        'badge'     => $statusBadge($plugins['cloudflared'], false),
-        'installed' => $plugins['cloudflared']['installed'],
-        'active'    => $plugins['cloudflared']['active'],
-        'install'   => 'Unduh cloudflared',
-        'open'      => ['/tunnels', 'Kelola Tunnel'],
+        'key'                 => 'cloudflared',
+        'icon'                => 'cloud',
+        'name'                => 'Cloudflare Tunnel',
+        'tag'                 => 'Akses online tanpa buka port',
+        'desc'                => 'Binary cloudflared untuk Quick Tunnel (trycloudflare.com) dan domain sendiri via Zero Trust.',
+        'version'             => $plugins['cloudflared']['version'] ?? null,
+        'badge'               => $statusBadge($plugins['cloudflared'], false),
+        'installed'           => $plugins['cloudflared']['installed'],
+        'active'              => $plugins['cloudflared']['active'],
+        'has_service_control' => false,
+        'install'             => 'Unduh cloudflared',
+        'open'                => ['/tunnels', 'Kelola Tunnels'],
     ],
 ];
 ?>
@@ -92,17 +95,19 @@ $services = [
                         <?= ui_icon('download') ?> <?= e($s['install']) ?>
                     </button>
                 <?php else: ?>
-                    <?php if ($s['active']): ?>
-                        <button type="button" class="btn btn-secondary btn-sm" title="Restart Service" onclick="controlService('<?= e($s['key']) ?>', 'restart')">
-                            <?= ui_icon('refresh') ?> Restart
-                        </button>
-                        <button type="button" class="btn btn-ghost btn-sm" style="color:var(--err);" title="Hentikan Service" onclick="controlService('<?= e($s['key']) ?>', 'stop')">
-                            <?= ui_icon('stop') ?> Stop
-                        </button>
-                    <?php else: ?>
-                        <button type="button" class="btn btn-primary btn-sm" title="Jalankan Service" onclick="controlService('<?= e($s['key']) ?>', 'start')">
-                            <?= ui_icon('play') ?> Start
-                        </button>
+                    <?php if (!empty($s['has_service_control'])): ?>
+                        <?php if ($s['active']): ?>
+                            <button type="button" class="btn btn-secondary btn-sm" title="Restart Service" onclick="controlService('<?= e($s['key']) ?>', 'restart')">
+                                <?= ui_icon('refresh') ?> Restart
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm" style="color:var(--err);" title="Hentikan Service" onclick="controlService('<?= e($s['key']) ?>', 'stop')">
+                                <?= ui_icon('stop') ?> Stop
+                            </button>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-primary btn-sm" title="Jalankan Service" onclick="controlService('<?= e($s['key']) ?>', 'start')">
+                                <?= ui_icon('play') ?> Start
+                            </button>
+                        <?php endif; ?>
                     <?php endif; ?>
 
                     <?php if ($s['key'] === 'nginx'): ?>
@@ -111,7 +116,7 @@ $services = [
                         </button>
                     <?php endif; ?>
                     <?php if ($s['open']): ?>
-                        <a href="<?= e($s['open'][0]) ?>" class="btn btn-secondary btn-sm"><?= e($s['open'][1]) ?></a>
+                        <a href="<?= e($s['open'][0]) ?>" class="btn btn-<?= empty($s['has_service_control']) ? 'primary' : 'secondary' ?> btn-sm"><?= e($s['open'][1]) ?></a>
                     <?php endif; ?>
                     <button type="button" class="btn btn-ghost btn-sm text-dim" title="Pasang ulang paket" onclick="queuePluginAction('install', '<?= e($s['key']) ?>', '')">
                         Reinstall
