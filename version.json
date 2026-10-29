@@ -1,13 +1,13 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "build": 20261029,
   "release_date": "2026-10-29",
   "repo_url": "https://github.com/uwaisalqorni/almusa-panel",
   "raw_version_url": "https://raw.githubusercontent.com/uwaisalqorni/almusa-panel/main/version.json",
   "changelog": [
-    "Initial Open-Source Release on GitHub",
-    "Panel Self-Updater Engine (UI Notifikasi, 1-Click Update & CLI)",
-    "Non-destructive SQLite auto-migration & atomic WAL backups",
-    "Multi-PHP, Nginx Vhost, MariaDB, and Cloudflare Tunnel support"
+    "Service Control UI (Start/Stop/Restart untuk Web Server & Database)",
+    "Improved CLI Integration",
+    "Performance Tuning",
+    "Cloudflared Service Detection"
   ]
 }
