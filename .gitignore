@@ -5,18 +5,25 @@ cf-token.md
 implementation.md
 audit_security.md
 audit_panelsaya
+plan_self_updater.md
 
 # Runtime Panel Database & Generated Credentials
-data/panel.db
-data/panel.db-shm
-data/panel.db-wal
+data/*.db
+data/*.db-shm
+data/*.db-wal
 data/entrance.txt
 data/initial_credentials.txt
+data/secret.key
 data/*.log
 data/*.lock
+data/cron_logs/*
+!data/cron_logs/.gitkeep
+!data/.gitkeep
 
-# Logs & Temporary Files
+# Environment & Logs & Temporary Files
 *.log
+.env
+/tmp/*
 /tmp/panelExec.log
 /tmp/cf_quick_*.log
 

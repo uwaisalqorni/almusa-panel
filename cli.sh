@@ -189,9 +189,10 @@ interactive_menu() {
         echo " 6) Reset Password Admin"
         echo " 7) Ganti Port Panel"
         echo " 8) Ganti Secret Entrance Path"
+        echo " 9) Update Almusa Panel ke Versi Terbaru"
         echo " 0) Keluar"
         echo ""
-        read -r -p "Pilihan Anda [0-8]: " choice
+        read -r -p "Pilihan Anda [0-9]: " choice
 
         case "$choice" in
             1) cmd_restart ;;
@@ -202,6 +203,7 @@ interactive_menu() {
             6) cmd_reset_password ;;
             7) cmd_change_port ;;
             8) cmd_change_entrance ;;
+            9) cmd_update ;;
             0) exit 0 ;;
             *) echo -e "${RED}[!] Pilihan tidak valid.${NC}" ;;
         esac
@@ -270,6 +272,33 @@ cmd_watchdog() {
     esac
 }
 
+cmd_update() {
+    echo -e "${CYAN}${BOLD}=== Pembaruan Almusa Panel (Self-Updater) ===${NC}"
+    local update_script="${PANEL_ROOT}/scripts/update_panel.sh"
+    if [ ! -f "$update_script" ]; then
+        echo -e "${RED}[ERROR] Skrip update ${update_script} tidak ditemukan!${NC}"
+        return 1
+    fi
+
+    php -r "
+    require_once '${PANEL_ROOT}/app/bootstrap.php';
+    \$v = \App\Core\Updater::getLocalVersion();
+    echo 'Versi terpasang: v' . \$v['version'] . ' (Build ' . \$v['build'] . ')' . PHP_EOL;
+    "
+
+    if [ -t 0 ]; then
+        read -r -p "Lanjutkan proses pembaruan panel sekarang? [Y/n]: " confirm
+        confirm=${confirm:-Y}
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}[*] Pembaruan dibatalkan.${NC}"
+            return 0
+        fi
+    fi
+
+    echo -e "${BLUE}[*] Menjalankan eksekutor update_panel.sh...${NC}"
+    bash "$update_script"
+}
+
 # Routing arguments
 case "${1:-}" in
     start)
@@ -286,6 +315,9 @@ case "${1:-}" in
         ;;
     default)
         cmd_default
+        ;;
+    update)
+        cmd_update
         ;;
     backup)
         shift

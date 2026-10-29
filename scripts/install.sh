@@ -244,9 +244,10 @@ systemctl enable mypanel-worker.service
 systemctl restart mypanel-worker.service
 nginx -t && systemctl reload nginx || systemctl restart nginx
 
-# 7. Symlink global command 'mypanel'
-echo -e "${BLUE}[6/7] Membuat symlink CLI /usr/local/bin/mypanel...${NC}"
+# 7. Symlink global command 'mypanel' & 'almusa'
+echo -e "${BLUE}[6/7] Membuat symlink CLI /usr/local/bin/mypanel & /usr/local/bin/almusa...${NC}"
 ln -sf /www/panel/cli.sh /usr/local/bin/mypanel
+ln -sf /www/panel/cli.sh /usr/local/bin/almusa
 
 # 8. Print Summary
 echo -e "${GREEN}${BOLD}"

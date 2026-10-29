@@ -6,6 +6,7 @@ use App\Core\Auth;
 use App\Core\Database;
 use App\Core\Response;
 use App\Core\SystemMonitor;
+use App\Core\Updater;
 use App\Services\NotificationService;
 
 class DashboardController
@@ -74,6 +75,7 @@ class DashboardController
             'cf_account_id'                 => Database::getSetting('cf_account_id', ''),
             'cf_tunnel_id'                  => Database::getSetting('cf_tunnel_id', ''),
             'cf_tunnel_token'               => Database::getSetting('cf_tunnel_token', ''),
+            'update_repo_url'               => Database::getSetting('update_repo_url', 'https://github.com/uwaisalqorni/almusa-panel'),
             'mysql_root_pass'               => Database::getSetting('mysql_root_pass', ''),
             // Notifikasi Darurat (Telegram & Discord)
             'notif_telegram_enabled'        => Database::getSetting('notif_telegram_enabled', '0'),
@@ -127,6 +129,10 @@ class DashboardController
         Database::setSetting('cf_account_id', $cfAccount);
         Database::setSetting('cf_tunnel_id', $cfTunnelId);
         Database::setSetting('cf_tunnel_token', $cfTunnelToken);
+        $updateRepo = trim((string)($_POST['update_repo_url'] ?? ''));
+        if ($updateRepo !== '') {
+            Database::setSetting('update_repo_url', $updateRepo);
+        }
         if ($mysqlPass !== '') {
             Database::setSetting('mysql_root_pass', $mysqlPass);
         }
@@ -251,5 +257,38 @@ class DashboardController
         }
 
         Response::json($res);
+    }
+
+    /**
+     * Check panel updates via Updater helper (with optional force re-check)
+     */
+    public function checkUpdate(): void
+    {
+        if (!Auth::check()) {
+            Response::json(['success' => false, 'error' => 'Unauthorized'], 401);
+            return;
+        }
+
+        $force = !empty($_GET['force']);
+        $info = Updater::check($force);
+
+        Response::json([
+            'success' => true,
+            'data'    => $info,
+        ]);
+    }
+
+    /**
+     * Schedules a self-update task via 1-click update
+     */
+    public function applyUpdate(): void
+    {
+        if (!Auth::check()) {
+            Response::json(['success' => false, 'error' => 'Unauthorized'], 401);
+            return;
+        }
+
+        $result = Updater::queueUpdate();
+        Response::json($result);
     }
 }

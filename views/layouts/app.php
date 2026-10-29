@@ -1,10 +1,14 @@
 <?php
 use App\Core\Auth;
 use App\Core\Database;
+use App\Core\Updater;
 
 $panelTitle = Database::getSetting('panel_title', 'Almusa Server Panel');
 $currentUri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $user = Auth::user();
+$updaterInfo = Updater::check(false);
+$hasUpdate = !empty($updaterInfo['update_available']);
+$localVersion = $updaterInfo['current_version'];
 
 $nav = [
     'Utama' => [
@@ -71,7 +75,12 @@ $isActive = static function (string $href) use ($currentUri): bool {
             <div class="brand-mark"><?= ui_icon('layers') ?></div>
             <div>
                 <div class="brand-name">Almusa Panel</div>
-                <div class="brand-sub">Lite Panel</div>
+                <div class="brand-sub" style="display:flex; align-items:center; gap:6px;">
+                    <span>v<?= e($localVersion) ?></span>
+                    <?php if ($hasUpdate): ?>
+                        <span class="badge badge-warning" style="font-size:9.5px; padding:0 5px; cursor:pointer; line-height:1.4;" onclick="openUpdateModal()" title="Pembaruan tersedia!">Update!</span>
+                    <?php endif; ?>
+                </div>
             </div>
         </div>
 
@@ -110,6 +119,14 @@ $isActive = static function (string $href) use ($currentUri): bool {
                     <span class="sep">/</span>
                     <strong class="truncate"><?= e($title ?? 'Dashboard') ?></strong>
                 </nav>
+                <button type="button" class="btn btn-sm <?= $hasUpdate ? 'btn-primary' : 'btn-ghost' ?>" onclick="openUpdateModal()" title="Periksa status pembaruan Almusa Panel" style="margin-left:8px; font-weight:600; display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 9px; border-radius:13px; font-size:11.5px; cursor:pointer;">
+                    <?php if ($hasUpdate): ?>
+                        <span class="dot dot-warn" style="background:#f59e0b; box-shadow:0 0 6px #f59e0b;"></span>
+                        <span>Update Tersedia (v<?= e($updaterInfo['latest_version']) ?>)</span>
+                    <?php else: ?>
+                        <span style="color:var(--text-3);">v<?= e($localVersion) ?></span>
+                    <?php endif; ?>
+                </button>
             </div>
 
             <div class="topbar-right">
@@ -183,6 +200,7 @@ $isActive = static function (string $href) use ($currentUri): bool {
 </div>
 
 <?php require __DIR__ . '/_nginx_modal.php'; ?>
+<?php require __DIR__ . '/_update_modal.php'; ?>
 
 <script src="<?= asset_url('/assets/js/panel.js') ?>"></script>
 </body>

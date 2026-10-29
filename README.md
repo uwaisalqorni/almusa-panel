@@ -18,14 +18,16 @@
    - [App Store & Multi-Versi PHP](#4-app-store--multi-versi-php)
    - [Cloudflare Tunnel (Quick & Custom Domain)](#5-cloudflare-tunnel-integration)
    - [Terminal Log Modal Real-Time](#6-terminal-eksekusi-real-time)
-7. [Panduan Perintah CLI (`mypanel`)](#-panduan-perintah-cli-mypanel)
-8. [Struktur Direktori Sistem](#-struktur-direktori-sistem)
-9. [Panduan Uninstal](#-panduan-uninstal)
+7. [Sistem Panel Self-Updater (1-Click & CLI)](#-sistem-panel-self-updater)
+8. [Panduan Perintah CLI (`mypanel`)](#-panduan-perintah-cli-mypanel)
+9. [Struktur Direktori Sistem](#-struktur-direktori-sistem)
+10. [Panduan Uninstal](#-panduan-uninstal)
 
 ---
 
 ## 🌟 Fitur Unggulan
 
+- **Panel Self-Updater Aman (1-Click & CLI):** Notifikasi pembaruan otomatis di dashboard UI, 1-Click Update dengan live log streaming, perintah terminal `mypanel update`, pencadangan atomik database SQLite (WAL-safe), serta migrasi otomatis non-destruktif tanpa risiko menimpa data user.
 - **Standalone Engine Terisolasi:** Berjalan pada port TCP khusus (default: `64448`) dengan database embedded SQLite3. Jika Nginx atau MySQL pengguna mengalami *crash*, panel kontrol tetap 100% aktif dan dapat diakses.
 - **Zero Web-Root RCE (Privilege Separation):** Request HTTP dari antarmuka web **tidak pernah** menjalankan `sudo` secara langsung. Web controller hanya memvalidasi input lalu memasukkan tugas ke antrean SQLite `tasks`. Daemon root (`task.php`) mengeksekusi script yang telah di-whitelist secara terisolasi.
 - **Dynamic Security Entrance Guard:** URL login diproteksi token rahasia (contoh: `/bhmbjoam`). Scanner bot yang mencoba mengakses `/` atau `/login` langsung menerima respons `404 Not Found`.
@@ -167,8 +169,27 @@ mypanel default
 
 ### 6. Terminal Eksekusi Real-Time
 - Setiap aksi sistem (instalasi PHP, penambahan Virtual Host, dump database) dikirim ke antrean background daemon.
-- Klik tombol **Terminal** di pojok kanan atas navbar untuk melihat jendela terminal gelap live streaming dari log `/tmp/panelExec.log`.
+- Klik tombol **Terminal** di pojok kanan atas navbar untuk melihat jendela terminal gelap live streaming dari log `data/panelExec.log`.
 - Dilengkapi tombol **Auto-scroll ON/OFF** dan **Kosongkan Log**.
+
+---
+
+## 🔄 Sistem Panel Self-Updater
+
+Almusa Panel dilengkapi sistem pembaruan mandiri (*self-updater*) yang aman dan teruji, menjamin **data SQLite (`data/panel.db`) tidak akan pernah tertimpa atau hilang**:
+
+1. **Notifikasi Otomatis di UI:**
+   - Tombol badge di navigasi atas (*topbar*) dan menu samping (*sidebar*) otomatis menampilkan status versi (contoh: `v1.0.0`) atau indikator menyala **"Update Tersedia (vX.X.X)"**.
+   - Dilengkapi sistem cache SQLite 6 jam agar tidak membebani kecepatan *loading* dashboard.
+2. **1-Click Update di Web UI:**
+   - Klik badge versi untuk membuka modal pembaruan, memeriksa changelog rilis terbaru, dan klik **"1-Click Update Sekarang"**.
+   - Tugas pembaruan diproses oleh antrean background daemon dan progresnya terpantau secara *real-time* via terminal log modal.
+3. **Pencadangan Atomik (Atomic SQLite WAL Backup):**
+   - Sebelum kode diperbarui, sistem otomatis mencadangkan file basis data menggunakan SQLite Online Backup API ke direktori `/www/backup/panel_db_backup_<tanggal>.db`.
+4. **Detached Background Restart:**
+   - Layanan systemd (`mypanel-web` dan `mypanel-worker`) dimuat ulang dengan jeda singkat di background sehingga daemon menyelesaikan penulisan log eksekusi secara tuntas sebelum me-restart.
+
+> 📖 **Dokumentasi Teknis Lengkap:** Lihat panduan mendalam arsitektur, proteksi data, dan panduan rilis di [docs/SELF_UPDATER.md](docs/SELF_UPDATER.md).
 
 ---
 
@@ -178,16 +199,21 @@ Panel dilengkapi perintah CLI bawaan yang dapat dipanggil langsung dari terminal
 
 ```bash
 mypanel [perintah]
+# atau
+almusa [perintah]
 ```
 
 | Perintah | Deskripsi |
 | :--- | :--- |
+| `mypanel update` | **Memperbarui Almusa Panel ke versi terbaru secara aman (Git fetch, backup DB, migrasi)** |
 | `mypanel start` | Menjalankan seluruh service panel (Web interface & Worker daemon) |
 | `mypanel stop` | Menghentikan seluruh service panel |
 | `mypanel restart` | Me-restart seluruh service panel |
 | `mypanel status` | Memeriksa status keaktifan Web Interface dan Worker Daemon |
 | `mypanel default` | Menampilkan ringkasan informasi login (URL, entrance path, user, password, port) |
-| `mypanel` *(tanpa argumen)* | Membuka **menu interaktif bernomor 1–8** di terminal |
+| `mypanel backup` | Manajemen snapshot cadangan database, situs, dan full server |
+| `mypanel watchdog` | Status dan pengujian daemon pemantau kesehatan server (Watchdog) |
+| `mypanel` *(tanpa argumen)* | Membuka **menu interaktif bernomor 1–9** di terminal |
 
 ### Menu Interaktif SSH:
 Jika Anda menjalankan perintah `mypanel` tanpa argumen, akan muncul menu interaktif:
@@ -204,6 +230,7 @@ Silakan pilih nomor menu:
  6) Reset Password Admin
  7) Ganti Port Panel
  8) Ganti Secret Entrance Path
+ 9) Update Almusa Panel ke Versi Terbaru
  0) Keluar
 ```
 
@@ -221,35 +248,44 @@ Semua file panel kontrol terisolasi secara teratur:
 │   │   │   ├── Database.php        # Singleton PDO SQLite (Strict & Auto-Migration)
 │   │   │   ├── Router.php          # Router & Dynamic Entrance Guard (404 Bot Blocker)
 │   │   │   ├── Auth.php            # Session Hardening, Bcrypt & Token CSRF
+│   │   │   ├── Updater.php         # Self-Updater Engine (GitHub Releases, Cache 6 Jam)
 │   │   │   ├── Response.php        # JSON & View Renderer
 │   │   │   └── SystemMonitor.php   # Pembaca Metrik Linux (/proc/stat, /proc/meminfo)
 │   │   └── Controllers/
 │   │       ├── AuthController.php
-│   │       ├── DashboardController.php
+│   │       ├── DashboardController.php # Stats, Settings, & Update API
 │   │       ├── SiteController.php      # Virtual Host & PHP Switcher
 │   │       ├── DatabaseController.php  # MySQL UTF8MB4 & User Provisioning
 │   │       ├── PluginController.php    # App Store & Extension Installer
 │   │       ├── TunnelController.php    # Cloudflare Quick & Zero Trust Tunnel
-│   │       └── TaskController.php      # Streaming Log /tmp/panelExec.log
+│   │       └── TaskController.php      # Streaming Log data/panelExec.log
 │   ├── data/
-│   │   ├── panel.db                # Basis Data SQLite (chmod 600)
+│   │   ├── panel.db                # Basis Data SQLite (chmod 600, WAL Mode)
 │   │   ├── entrance.txt            # Token Path Rahasia Masuk
+│   │   ├── secret.key              # Kunci Enkripsi Kredensial
 │   │   └── initial_credentials.txt # Catatan Kredensial Awal
+│   ├── docs/                       # Dokumentasi Arsitektur & Panduan
+│   │   └── SELF_UPDATER.md         # Panduan Lengkap Sistem Self-Updater
 │   ├── public/                     # Document Root Server Built-in
 │   │   ├── index.php               # Front Controller
 │   │   └── assets/                 # CSS & Javascript Interaktif
 │   ├── views/                      # Template Tampilan Antarmuka
+│   │   └── layouts/
+│   │       ├── app.php             # Master Layout (Topbar Version Badge)
+│   │       └── _update_modal.php   # Dialog Pembaruan 1-Click & Changelog
 │   ├── plugins/                    # Modular Service Installers (Nginx, PHP, MySQL, Cloudflared)
 │   ├── rewrite/nginx/              # Template URL Rewrite (Default, Laravel, WordPress, ThinkPHP)
 │   ├── scripts/
 │   │   ├── install.sh              # Master Bootstrap Installer
 │   │   ├── uninstall.sh            # Safe Uninstaller dengan Pencadangan SQLite
+│   │   ├── update_panel.sh         # Eksekutor Pembaruan Mandiri (Atomic Backup & Detached Restart)
 │   │   └── vhost_manager.sh        # Generator Nginx Virtual Host
-│   ├── cli.sh                      # Helper CLI (symlinked ke /usr/local/bin/mypanel)
+│   ├── cli.sh                      # Helper CLI (symlinked ke /usr/local/bin/mypanel & almusa)
+│   ├── version.json                # Metadata Versi, Build & Changelog
 │   └── task.php                    # Daemon Worker Root (Task Queue Poller)
 ├── server/                         # Runtime config, socket, dan file PID
 ├── wwwroot/                        # Direktori utama website yang dihosting
-└── backup/                         # Direktori arsip cadangan (.sql.gz & snapshot situs)
+└── backup/                         # Direktori arsip cadangan (snapshot DB pre-update & dump SQL)
 ```
 
 ---

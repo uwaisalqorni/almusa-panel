@@ -54,6 +54,11 @@ $csrf = \App\Core\Auth::token();
                     <div class="help">Bawaan: 64448.</div>
                 </div>
             </div>
+            <div class="field">
+                <label class="label" for="update_repo_url">URL Repositori GitHub (Self-Updater)</label>
+                <input type="url" id="update_repo_url" name="update_repo_url" class="input" value="<?= e($settings['update_repo_url'] ?? '') ?>" placeholder="https://github.com/uwaisalqorni/almusa-panel">
+                <div class="help">URL repositori Git upstream yang digunakan untuk mengecek update dan rilis.</div>
+            </div>
         </section>
 
         <section class="form-section">

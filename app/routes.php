@@ -28,6 +28,8 @@ Router::post('/settings/save', [DashboardController::class, 'saveSettings']);
 Router::post('/settings/change-password', [DashboardController::class, 'changePassword']);
 Router::post('/api/settings/notifications/save', [DashboardController::class, 'saveNotificationSettings']);
 Router::post('/api/settings/notifications/test', [DashboardController::class, 'testNotification']);
+Router::get('/api/system/update/check', [DashboardController::class, 'checkUpdate']);
+Router::post('/api/system/update/apply', [DashboardController::class, 'applyUpdate']);
 
 // Sites / Virtual Hosts
 Router::get('/sites', [SiteController::class, 'index']);

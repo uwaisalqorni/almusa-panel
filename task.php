@@ -334,6 +334,11 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             if (!file_exists($script) || empty($projectPath)) return null;
             return "bash " . escapeshellarg($script) . " run " . escapeshellarg($projectPath) . " " . escapeshellarg($phpVer) . " " . escapeshellarg($cmd) . ($extra !== '' ? " " . escapeshellarg($extra) : "");
 
+        case 'panel_self_update':
+            $script = "{$root}/scripts/update_panel.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script);
+
         default:
             return null;
     }
