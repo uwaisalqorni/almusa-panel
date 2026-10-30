@@ -36,7 +36,7 @@ case "$ACTION" in
 
         # Also install php-mysql for all installed PHP versions on the server
         for v in 7.4 8.0 8.1 8.2 8.3 8.4 8.5; do
-            if [ -x "/usr/sbin/php-fpm${v}" ] || [ -d "/etc/php/${v}" ]; then
+            if [ -x "/usr/sbin/php-fpm${v}" ] || [ -d "/etc/php/${v}/fpm" ]; then
                 DEBIAN_FRONTEND=noninteractive apt-get install -y "php${v}-mysql" 2>/dev/null || true
                 systemctl reload "php${v}-fpm" 2>/dev/null || true
             fi

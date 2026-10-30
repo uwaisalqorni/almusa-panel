@@ -54,7 +54,7 @@ class PluginController
 
         $phpList = [];
         foreach ($phpVersions as $ver) {
-            $isInstalled = file_exists("/etc/php/{$ver}/fpm") || file_exists("/usr/bin/php{$ver}");
+            $isInstalled = file_exists("/usr/sbin/php-fpm{$ver}") || file_exists("/etc/php/{$ver}/fpm/php-fpm.conf");
             $isActive = file_exists("/run/php/php{$ver}-fpm.sock") || SystemMonitor::isServiceActive("php{$ver}-fpm");
             $patchInfo = $patchStatus[$ver] ?? [];
             $phpList[$ver] = [
