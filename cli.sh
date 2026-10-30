@@ -157,6 +157,21 @@ cmd_change_port() {
     \App\Core\Database::setSetting('panel_port', '${new_port}');
     echo PHP_EOL . '[✔] Port panel berhasil diubah menjadi: ${new_port}' . PHP_EOL;
     "
+
+    local nginx_conf="${PANEL_ROOT}/config/nginx-panel.conf"
+    if [ -f "$nginx_conf" ]; then
+        sed -i -E "s/listen [0-9]+ default_server;/listen ${new_port} default_server;/g" "$nginx_conf"
+        sed -i -E "s/listen \[::\]:[0-9]+ default_server;/listen [::]:${new_port} default_server;/g" "$nginx_conf"
+        nginx -t >/dev/null 2>&1 && (systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true)
+    fi
+
+    if command -v ufw >/dev/null 2>&1; then
+        if ufw status 2>/dev/null | grep -q "Status: active"; then
+            ufw allow "${new_port}/tcp" >/dev/null 2>&1 || true
+            ufw reload >/dev/null 2>&1 || true
+        fi
+    fi
+
     cmd_restart
 }
 
@@ -172,7 +187,9 @@ cmd_change_entrance() {
     php -r "
     require_once '${PANEL_ROOT}/app/bootstrap.php';
     \App\Core\Database::setSetting('entrance_path', '${new_entrance}');
-    file_put_contents('${PANEL_ROOT}/data/entrance.txt', '${new_entrance}');
+    \$f = '${PANEL_ROOT}/data/entrance.txt';
+    file_put_contents(\$f, '${new_entrance}');
+    \App\Core\Database::fixPermissions(\$f, 0664);
     echo PHP_EOL . '[✔] Secret Entrance berhasil diubah menjadi: /${new_entrance}' . PHP_EOL;
     "
 }

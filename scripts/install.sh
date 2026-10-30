@@ -40,10 +40,11 @@ fi
 echo -e "${BLUE}[1/7] Terdeteksi Sistem Operasi: ${OS} ${VER}${NC}"
 
 # 3. Install Minimal Dependencies for Panel Engine
-echo -e "${BLUE}[2/7] Menginstal dependensi inti engine panel (PHP CLI, SQLite3, Curl)...${NC}"
+echo -e "${BLUE}[2/7] Menginstal dependensi inti engine panel (Git, Curl, SQLite3, PHP)...${NC}"
 apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl \
+    git \
     sqlite3 \
     unzip \
     software-properties-common \
@@ -70,33 +71,70 @@ if [ "$OS" = "ubuntu" ] && [[ "$CODENAME" =~ ^(focal|jammy|noble)$ ]]; then
 fi
 apt-get update -y || true
 
-# Ensure standalone PHP CLI and sqlite extensions are installed
+# Install base PHP CLI first to resolve default system version
+DEBIAN_FRONTEND=noninteractive apt-get install -y php-cli || true
+PHP_VER=$(php -r "echo PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;" 2>/dev/null || echo "8.3")
+echo -e "${BLUE}[*] Terdeteksi versi PHP inti sistem: ${PHP_VER}${NC}"
+
+# Install version-specific PHP-FPM and required extensions, with generic fallback
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    php-cli \
-    php-sqlite3 \
-    php-curl \
-    php-mbstring \
-    php-xml || true
+    php${PHP_VER}-fpm \
+    php${PHP_VER}-cli \
+    php${PHP_VER}-sqlite3 \
+    php${PHP_VER}-curl \
+    php${PHP_VER}-mbstring \
+    php${PHP_VER}-xml \
+    php${PHP_VER}-zip || \
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    php-fpm php-cli php-sqlite3 php-curl php-mbstring php-xml php-zip || true
 
 # 4. Setup Isolated Directory Structure under /www
 echo -e "${BLUE}[3/7] Menyiapkan struktur direktori /www...${NC}"
-mkdir -p /www/server /www/wwwroot /www/backup
+mkdir -p /www/server /www/wwwroot /www/backup /www/panel /www/panel/data /run/php
 
-# Setup /www/panel if not already symlinked or located there
-SOURCE_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )/.." >/dev/null 2>&1 && pwd )"
+# Resolve source directory reliably (pipe-safe)
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+SOURCE_DIR=""
+
+if [ -n "$SCRIPT_SOURCE" ] && [ -f "$SCRIPT_SOURCE" ]; then
+    CANDIDATE_DIR="$( cd -P "$( dirname "$SCRIPT_SOURCE" )/.." >/dev/null 2>&1 && pwd )"
+    if [ -f "$CANDIDATE_DIR/app/bootstrap.php" ]; then
+        SOURCE_DIR="$CANDIDATE_DIR"
+    fi
+fi
+
+if [ -z "$SOURCE_DIR" ]; then
+    if [ -f "$(pwd)/app/bootstrap.php" ]; then
+        SOURCE_DIR="$(pwd)"
+    elif [ -f "/www/panel/app/bootstrap.php" ]; then
+        SOURCE_DIR="/www/panel"
+    fi
+fi
+
+# If SOURCE_DIR still cannot be determined (e.g. piped via curl directly on a fresh server)
+if [ -z "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/app/bootstrap.php" ]; then
+    echo -e "${BLUE}[*] Mengunduh source code Almusa Panel dari GitHub...${NC}"
+    TMP_CLONE="/tmp/almusa-panel-src-$$"
+    rm -rf "$TMP_CLONE"
+    git clone --depth=1 https://github.com/uwaisalqorni/almusa-panel.git "$TMP_CLONE"
+    SOURCE_DIR="$TMP_CLONE"
+fi
+
+# Copy files to /www/panel if not already located there
 if [ -L /www/panel ] && [ "$(readlink -f /www/panel)" = "$SOURCE_DIR" ]; then
     echo -e "${GREEN}[✔] /www/panel sudah terhubung ke ${SOURCE_DIR}.${NC}"
 elif [ "$SOURCE_DIR" != "/www/panel" ]; then
-    echo -e "${BLUE}[*] Menyiapkan tautan /www/panel ke ${SOURCE_DIR}...${NC}"
+    echo -e "${BLUE}[*] Memasang file aplikasi ke /www/panel...${NC}"
     mkdir -p /www/panel
     cp -rf "$SOURCE_DIR"/* /www/panel/
+    if [[ "$SOURCE_DIR" == /tmp/almusa-panel-src-* ]]; then
+        rm -rf "$SOURCE_DIR"
+    fi
 fi
 
-chmod 770 /www/panel/data
-chown -R www-data:www-data /www/panel/data 2>/dev/null || true
-chmod +x /www/panel/cli.sh
-chmod +x /www/panel/scripts/*.sh
-find /www/panel/plugins -name "*.sh" -exec chmod +x {} +
+chmod +x /www/panel/cli.sh 2>/dev/null || true
+chmod +x /www/panel/scripts/*.sh 2>/dev/null || true
+find /www/panel/plugins -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
 
 # 5. Initialize Database & Generate Credentials
 echo -e "${BLUE}[4/7] Menginisialisasi basis data SQLite dan Security Entrance...${NC}"
@@ -108,17 +146,38 @@ require_once '/www/panel/app/bootstrap.php';
 \App\Core\Database::autoMigrate();
 "
 
+# Set standard permissions for /www/panel and data directory
+chown -R www-data:www-data /www/panel
+chmod -R 755 /www/panel
+chmod 2775 /www/panel/data
+chmod 664 /www/panel/data/* 2>/dev/null || true
+
 # 6. Configure Nginx Virtual Host and Dedicated PHP-FPM for Panel
 echo -e "${BLUE}[5/7] Menyiapkan Nginx & Dedicated PHP-FPM untuk Almusa Panel...${NC}"
 
-# Pastikan nginx terpasang
+# Pastikan nginx terpasang dan aktif
 if ! command -v nginx >/dev/null 2>&1; then
     echo -e "${BLUE}[*] Memasang Nginx...${NC}"
     DEBIAN_FRONTEND=noninteractive apt-get install -y nginx || true
 fi
 
-# Tentukan binary PHP-FPM yang tersedia (misal php-fpm8.3 atau default php-fpm)
-PHP_FPM_BIN=$(command -v php-fpm8.3 || command -v php-fpm || echo "/usr/sbin/php-fpm8.3")
+systemctl enable nginx 2>/dev/null || true
+systemctl start nginx 2>/dev/null || true
+
+# Tentukan binary PHP-FPM yang tersedia secara dinamis
+PHP_FPM_BIN=""
+if [ -n "${PHP_VER:-}" ] && command -v "php-fpm${PHP_VER}" >/dev/null 2>&1; then
+    PHP_FPM_BIN=$(command -v "php-fpm${PHP_VER}")
+elif command -v php-fpm >/dev/null 2>&1; then
+    PHP_FPM_BIN=$(command -v php-fpm)
+else
+    PHP_FPM_BIN=$(find /usr/sbin -name "php-fpm*" -executable 2>/dev/null | sort -V | tail -n 1)
+fi
+
+if [ -z "$PHP_FPM_BIN" ] || [ ! -x "$PHP_FPM_BIN" ]; then
+    PHP_FPM_BIN="/usr/sbin/php-fpm${PHP_VER:-8.3}"
+fi
+echo -e "${BLUE}[*] Menggunakan PHP-FPM binary: ${PHP_FPM_BIN}${NC}"
 
 PORT=$(php -r "
 define('PANEL_ROOT', '/www/panel');
@@ -126,8 +185,10 @@ require_once '/www/panel/app/bootstrap.php';
 echo \App\Core\Database::getSetting('panel_port', '64448');
 ")
 
-# Pastikan direktori config ada
+# Pastikan direktori config dan socket ada
 mkdir -p /www/panel/config /run/php /www/panel/public/adminer
+chown -R www-data:www-data /run/php
+chmod 755 /run/php
 if [ ! -f /www/panel/public/adminer/adminer-core.php ]; then
     curl -fsSL https://github.com/vrana/adminer/releases/download/v4.8.1/adminer-4.8.1-mysql.php -o /www/panel/public/adminer/adminer-core.php 2>/dev/null || true
 fi
@@ -219,6 +280,8 @@ After=network.target
 [Service]
 Type=simple
 User=root
+RuntimeDirectory=php
+RuntimeDirectoryMode=0755
 ExecStart=${PHP_FPM_BIN} -F -y /www/panel/config/panel-fpm.conf
 ExecReload=/bin/kill -USR2 \$MAINPID
 Restart=always
@@ -250,7 +313,16 @@ systemctl enable mypanel-web.service
 systemctl restart mypanel-web.service
 systemctl enable mypanel-worker.service
 systemctl restart mypanel-worker.service
-nginx -t && systemctl reload nginx || systemctl restart nginx
+nginx -t && (systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true)
+
+# Buka port di firewall jika UFW aktif
+if command -v ufw >/dev/null 2>&1; then
+    if ufw status 2>/dev/null | grep -q "Status: active"; then
+        echo -e "${BLUE}[*] Membuka port listen panel (${PORT}/tcp) di UFW...${NC}"
+        ufw allow "${PORT}/tcp" >/dev/null 2>&1 || true
+        ufw reload >/dev/null 2>&1 || true
+    fi
+fi
 
 # 7. Symlink global command 'mypanel' & 'almusa'
 echo -e "${BLUE}[6/7] Membuat symlink CLI /usr/local/bin/mypanel & /usr/local/bin/almusa...${NC}"

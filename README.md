@@ -89,14 +89,15 @@ sudo bash scripts/install.sh
 ```
 
 ### 2. Apa yang Dilakukan oleh Installer?
-1. Menginstal paket minimal sistem yang dibutuhkan engine: `curl`, `sqlite3`, `php-cli`, `php-sqlite3`, `php-curl`, `php-mbstring`, `php-xml`.
-2. Mendaftarkan repositori `ppa:ondrej/php` agar App Store siap memasang multi-versi PHP kapan saja.
-3. Menyiapkan struktur direktori `/www/{panel,server,wwwroot,backup}` dengan izin ketat (`chmod 700 /www/panel/data`).
+1. Menginstal paket minimal sistem yang dibutuhkan engine: `git`, `curl`, `sqlite3`, `nginx`, serta `php-fpm` & `php-cli` yang sesuai dengan rilis Linux aktif.
+2. Mendaftarkan repositori `ppa:ondrej/php` agar siap memasang multi-versi PHP kapan saja.
+3. Menyiapkan struktur direktori `/www/{panel,server,wwwroot,backup}` dengan standar hak akses aman (`chmod 2775 /www/panel/data` milik grup `www-data`).
 4. Menginisialisasi basis data SQLite, membuat kredensial admin default, dan membuat token secret entrance acak.
 5. Mendaftarkan dan mengaktifkan 2 unit service `systemd`:
-   - `mypanel-web.service`: Web interface panel berjalan otomatis saat server *boot*.
+   - `mypanel-web.service`: Web interface panel (Dedicated PHP-FPM) berjalan otomatis saat server *boot* dengan `RuntimeDirectory=php`.
    - `mypanel-worker.service`: Daemon eksekusi tugas background root.
-6. Membuat symlink global perintah `/usr/local/bin/mypanel`.
+6. Membuka port listen panel (`64448`) pada firewall UFW jika firewall aktif.
+7. Membuat symlink global perintah `/usr/local/bin/mypanel` & `/usr/local/bin/almusa`.
 
 ---
 

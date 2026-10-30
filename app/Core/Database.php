@@ -25,6 +25,25 @@ class Database
         self::$instance = null;
     }
 
+    public static function isRoot(): bool
+    {
+        if (function_exists('posix_getuid')) {
+            return posix_getuid() === 0;
+        }
+        return (get_current_user() === 'root' || getenv('USER') === 'root');
+    }
+
+    public static function fixPermissions(string $path, int $mode = 0664): void
+    {
+        if (file_exists($path)) {
+            @chmod($path, $mode);
+            if (self::isRoot()) {
+                @chown($path, 'www-data');
+                @chgrp($path, 'www-data');
+            }
+        }
+    }
+
     public static function getInstance(): PDO
     {
         if (self::$instance === null) {
@@ -34,7 +53,14 @@ class Database
 
             $dir = dirname(self::$dbFile);
             if (!is_dir($dir)) {
-                mkdir($dir, 0750, true);
+                @mkdir($dir, 0775, true);
+            }
+            if (is_dir($dir)) {
+                @chmod($dir, 02775);
+                if (self::isRoot()) {
+                    @chown($dir, 'www-data');
+                    @chgrp($dir, 'www-data');
+                }
             }
 
             $dsn = 'sqlite:' . self::$dbFile;
@@ -50,8 +76,12 @@ class Database
                 self::$instance->exec('PRAGMA foreign_keys = ON;');
                 self::$instance->exec('PRAGMA busy_timeout = 5000;');
 
-                if (file_exists(self::$dbFile)) {
-                    @chmod(self::$dbFile, 0600);
+                self::fixPermissions(self::$dbFile, 0664);
+                if (file_exists(self::$dbFile . '-wal')) {
+                    self::fixPermissions(self::$dbFile . '-wal', 0664);
+                }
+                if (file_exists(self::$dbFile . '-shm')) {
+                    self::fixPermissions(self::$dbFile . '-shm', 0664);
                 }
             } catch (PDOException $e) {
                 error_log("Database connection error: " . $e->getMessage());
@@ -230,7 +260,7 @@ SQL;
             self::setSetting('panel_title', 'Almusa Control Panel');
 
             file_put_contents($entranceFile, $entrancePath);
-            @chmod($entranceFile, 0600);
+            self::fixPermissions($entranceFile, 0664);
 
             $info = "======================================================\n";
             $info .= "        ALMUSA SERVER CONTROL PANEL CREDENTIALS        \n";
@@ -242,13 +272,13 @@ SQL;
             $info .= "Login URL Format     : http://<SERVER_IP>:64448/" . $entrancePath . "\n";
             $info .= "======================================================\n";
             file_put_contents($credsFile, $info);
-            @chmod($credsFile, 0600);
+            self::fixPermissions($credsFile, 0660);
         } else {
             // Ensure entrance file exists and matches DB
             $dbEntrance = self::getSetting('entrance_path');
             if ($dbEntrance && !file_exists($entranceFile)) {
                 file_put_contents($entranceFile, $dbEntrance);
-                @chmod($entranceFile, 0600);
+                self::fixPermissions($entranceFile, 0664);
             }
         }
 

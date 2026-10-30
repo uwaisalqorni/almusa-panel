@@ -164,8 +164,9 @@ class DashboardController
         }
 
         // Update entrance.txt file
-        @file_put_contents($root . '/data/entrance.txt', $entrance);
-        @chmod($root . '/data/entrance.txt', 0600);
+        $entranceFile = $root . '/data/entrance.txt';
+        @file_put_contents($entranceFile, $entrance);
+        \App\Core\Database::fixPermissions($entranceFile, 0664);
 
         $_SESSION['settings_msg'] = 'Pengaturan berhasil disimpan. Jika port atau entrance diubah, sesuaikan URL akses Anda.';
         Response::redirect('/settings');
