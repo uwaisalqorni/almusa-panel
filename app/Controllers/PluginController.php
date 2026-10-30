@@ -42,7 +42,7 @@ class PluginController
         ];
 
         // PHP Multi-Versions & APT Patch Status (CVE-2026-109618 / CVE-2026-109619)
-        $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+        $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
         $patchStatus = [];
         $checkScript = "{$root}/plugins/php/check_updates.sh";
         if (file_exists($checkScript)) {
@@ -89,7 +89,7 @@ class PluginController
             Response::json(['success' => false, 'error' => 'Plugin tidak valid.'], 400);
         }
 
-        if ($plugin === 'php' && !preg_match('/^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4)$/', $version)) {
+        if ($plugin === 'php' && !preg_match('/^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4|8\.5)$/', $version)) {
             Response::json(['success' => false, 'error' => 'Versi PHP tidak valid.'], 400);
         }
 
@@ -152,7 +152,7 @@ class PluginController
         $ext = trim($_POST['extension'] ?? '');
         $subAction = trim($_POST['sub_action'] ?? 'install');
 
-        if (!preg_match('/^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4)$/', $version)) {
+        if (!preg_match('/^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4|8\.5)$/', $version)) {
             Response::json(['success' => false, 'error' => 'Versi PHP tidak valid.'], 400);
         }
 
@@ -194,7 +194,7 @@ class PluginController
             Response::json(['success' => false, 'error' => 'Plugin tidak valid.'], 400);
         }
 
-        if (!preg_match('/^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4)$/', $version)) {
+        if (!preg_match('/^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4|8\.5)$/', $version)) {
             Response::json(['success' => false, 'error' => 'Versi PHP tidak valid.'], 400);
         }
 

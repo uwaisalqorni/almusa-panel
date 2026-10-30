@@ -7,11 +7,12 @@
 
 ## 📌 Daftar Isi
 1. [Latar Belakang & Kronologi Kasus](#1-latar-belakang--kronologi-kasus)
-2. [Analisis 4 Rantai Kegagalan (Root Cause Analysis)](#2-analisis-4-rantai-kegagalan-root-cause-analysis)
+2. [Analisis 5 Rantai Kegagalan (Root Cause Analysis)](#2-analisis-5-rantai-kegagalan-root-cause-analysis)
    - [Kegagalan 1: Eksekusi Piped Script & Direktori Sumber Keliru](#kegagalan-1-eksekusi-piped-script--direktori-sumber-keliru)
    - [Kegagalan 2: Web Interface STOPPED (status=203/EXEC)](#kegagalan-2-web-interface-stopped-status203exec)
    - [Kegagalan 3: Web UI Unreachable (Port & Firewall UFW)](#kegagalan-3-web-ui-unreachable-port--firewall-ufw)
    - [Kegagalan 4: HTTP ERROR 500 (Konflik Hak Akses SQLite Root vs www-data)](#kegagalan-4-http-error-500-konflik-hak-akses-sqlite-root-vs-www-data)
+   - [Kegagalan 5: Gagal Membuat Database MySQL (Driver PDO Missing / Mismatch)](#kegagalan-5-gagal-membuat-database-mysql-driver-pdo-missing--mismatch-php-85-vs-83)
 3. [Arsitektur Solusi & Perubahan Kode](#3-arsitektur-solusi--perubahan-kode)
    - [1. Bootstrap Script Mandiri (almusa.sh)](#1-bootstrap-script-mandiri-almusash)
    - [2. Refaktor Master Installer (scripts/install.sh)](#2-refaktor-master-installer-scriptsinstallsh)
@@ -130,6 +131,17 @@ flowchart TD
 
 ---
 
+### Kegagalan 5: Gagal Membuat Database MySQL (Driver PDO Missing / Mismatch PHP 8.5 vs 8.3)
+* **Pesan Error di UI:** `could not find driver` atau `Gagal terhubung ke MySQL/MariaDB sebagai root`.
+* **Akar Masalah:**
+  1. Panel berjalan di bawah Dedicated PHP-FPM dengan versi PHP sistem yang aktif (misalnya PHP 8.5).
+  2. Pada installer lama, paket driver `php${PHP_VER}-mysql` belum dimasukkan ke dalam daftar instalasi dependensi core panel.
+  3. Ketika MariaDB dipasang melalui App Store ([plugins/mysql/install.sh](file:///home/afandi/almusa-panel/plugins/mysql/install.sh)), skrip lama hanya menjalankan perintah `apt-get install -y php-mysql`. Pada repositori Ubuntu, meta-package `php-mysql` secara default hanya menarik modul untuk rilis dasar distro (`php8.3-mysql`), bukan untuk versi PHP 8.5 yang sedang aktif menjalankan panel.
+  4. Layanan PHP-FPM web panel (`mypanel-web.service`) tidak dimuat ulang (reload/restart) pasca instalasi MySQL, sehingga proses FPM yang sedang berjalan di memori tidak mengenali modul `pdo_mysql` baru.
+  5. Konfigurasi awal user root MariaDB lama hanya mengizinkan `root@localhost` (UNIX socket), sehingga koneksi TCP via `127.0.0.1:3306` dari web panel berpotensi ditolak jika user `root@127.0.0.1` belum diatur dengan password yang sama.
+
+---
+
 ## 3. Arsitektur Solusi & Perubahan Kode
 
 Berikut adalah pembaruan kode yang telah diterapkan di repositori untuk mengatasi seluruh permasalahan di atas secara permanen:
@@ -160,27 +172,23 @@ rm -rf "$INSTALLER_TMP"
 
 ### 2. Refaktor Master Installer ([scripts/install.sh](file:///home/afandi/almusa-panel/scripts/install.sh))
 * **Deteksi Jalur Pipe-Safe:** Installer kini memeriksa apakah file `app/bootstrap.php` ada di `$SOURCE_DIR`. Jika tidak ada (misalnya installer dieksekusi secara terisolasi tanpa clone), installer otomatis meng-clone repositori resmi dari GitHub ke `/tmp`.
-* **Deteksi Versi PHP Aktif Secara Dinamis:**
+* **Pembersihan Repositori Bersih (Ubuntu PPA vs Debian):**
+  Untuk mencegah apt 404 pada Ubuntu, installer menghapus konfigurasi Debian `packages.sury.org` jika ada dan menggunakan repositori resmi Ubuntu `ppa:ondrej/php`.
+* **Penguncian Engine Inti Panel ke PHP 8.3 LTS:**
+  Untuk menjamin stabilitas 100% dan kompatibilitas seluruh driver (`pdo_sqlite`, `pdo_mysql`, dsb.), runtime internal panel (`mypanel-web` dan `mypanel-worker`) dikunci ke PHP 8.3 LTS:
   ```bash
-  PHP_VER=$(php -r "echo PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;" 2>/dev/null || echo "8.3")
+  PANEL_PHP_VER="8.3"
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      php${PHP_VER}-fpm php${PHP_VER}-cli php${PHP_VER}-sqlite3 \
-      php${PHP_VER}-curl php${PHP_VER}-mbstring php${PHP_VER}-xml php${PHP_VER}-zip || \
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      php-fpm php-cli php-sqlite3 php-curl php-mbstring php-xml php-zip || true
+      php${PANEL_PHP_VER}-fpm php${PANEL_PHP_VER}-cli php${PANEL_PHP_VER}-sqlite3 \
+      php${PANEL_PHP_VER}-mysql php${PANEL_PHP_VER}-curl php${PANEL_PHP_VER}-mbstring \
+      php${PANEL_PHP_VER}-xml php${PANEL_PHP_VER}-zip
+  
+  PHP_FPM_BIN=$(command -v php-fpm8.3 || command -v php-fpm || echo "/usr/sbin/php-fpm8.3")
+  PHP_CLI_BIN=$(command -v php8.3 || command -v php || echo "/usr/bin/php8.3")
   ```
-* **Pencarian Binary PHP-FPM Otomatis:**
-  ```bash
-  PHP_FPM_BIN=""
-  if [ -n "${PHP_VER:-}" ] && command -v "php-fpm${PHP_VER}" >/dev/null 2>&1; then
-      PHP_FPM_BIN=$(command -v "php-fpm${PHP_VER}")
-  elif command -v php-fpm >/dev/null 2>&1; then
-      PHP_FPM_BIN=$(command -v php-fpm)
-  else
-      PHP_FPM_BIN=$(find /usr/sbin -name "php-fpm*" -executable 2>/dev/null | sort -V | tail -n 1)
-  fi
-  ```
-* **Systemd `RuntimeDirectory=php`:** Ditambahkan pada unit `mypanel-web.service` agar `/run/php` dibuat otomatis saat boot dengan izin `0755`.
+* **Dukungan Multi-Versi Website (PHP 7.4 s/d 8.5):**
+  Meskipun panel berjalan di atas PHP 8.3 LTS, website pengguna dapat dibuat dan dijalankan menggunakan pool terisolasi dari PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, hingga **PHP 8.5**.
+* **Systemd `RuntimeDirectory=php`:** Ditambahkan pada unit `mypanel-web.service` agar direktori socket `/run/php` dibuat otomatis saat boot dengan izin `0755`.
 * **Otomasi Firewall UFW:** Jika firewall UFW aktif, port listen panel dibuka secara otomatis:
   ```bash
   if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then

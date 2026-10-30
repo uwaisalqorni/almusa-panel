@@ -13,22 +13,37 @@ class DatabaseController
 {
     private function getMysqlConnection(string $host = '127.0.0.1', int $port = 3306): PDO
     {
+        if (!extension_loaded('pdo_mysql')) {
+            $ver = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+            throw new \Exception("Ekstensi PHP 'pdo_mysql' belum terpasang atau belum aktif pada PHP {$ver}. Silakan jalankan di terminal server: 'sudo apt-get install -y php{$ver}-mysql && sudo systemctl restart mypanel-web'.");
+        }
+
         $rootPass = Database::getSetting('mysql_root_pass', '');
-        $dsn = "mysql:host={$host};port={$port};charset=utf8mb4";
         $options = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES   => false,
         ];
 
+        // 1. Try TCP connection to 127.0.0.1 with root password
         try {
-            return new PDO($dsn, 'root', $rootPass, $options);
+            return new PDO("mysql:host={$host};port={$port};charset=utf8mb4", 'root', $rootPass, $options);
         } catch (PDOException $e) {
-            // Try socket or root without pass if local
+            // 2. Try TCP connection to localhost with password
             try {
-                return new PDO("mysql:unix_socket=/var/run/mysqld/mysqld.sock;charset=utf8mb4", 'root', '', $options);
+                return new PDO("mysql:host=localhost;port={$port};charset=utf8mb4", 'root', $rootPass, $options);
             } catch (PDOException $e2) {
-                throw new \Exception("Gagal terhubung ke MySQL/MariaDB sebagai root: " . $e->getMessage() . " Silakan atur password root di menu Pengaturan Panel.");
+                // 3. Try UNIX socket with password
+                try {
+                    return new PDO("mysql:unix_socket=/var/run/mysqld/mysqld.sock;charset=utf8mb4", 'root', $rootPass, $options);
+                } catch (PDOException $e3) {
+                    // 4. Try socket with blank password
+                    try {
+                        return new PDO("mysql:unix_socket=/var/run/mysqld/mysqld.sock;charset=utf8mb4", 'root', '', $options);
+                    } catch (PDOException $e4) {
+                        throw new \Exception("Gagal terhubung ke MySQL/MariaDB sebagai root: " . $e->getMessage() . ". Silakan pastikan layanan MariaDB aktif (systemctl status mariadb) atau sesuaikan password root di menu Pengaturan Panel.");
+                    }
+                }
             }
         }
     }

@@ -14,6 +14,12 @@ while [ -h "$SOURCE" ]; do
 done
 PANEL_ROOT="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 
+# Resolve dedicated Panel PHP binary (prefer php8.3)
+PHP_BIN=$(command -v php8.3 || command -v php || echo "/usr/bin/php")
+php() {
+    "$PHP_BIN" "$@"
+}
+
 # Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'

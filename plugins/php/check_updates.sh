@@ -7,7 +7,7 @@
 set -e
 
 TARGET_VER="${1:-all}"
-VERSIONS=("7.4" "8.0" "8.1" "8.2" "8.3" "8.4")
+VERSIONS=("7.4" "8.0" "8.1" "8.2" "8.3" "8.4" "8.5")
 
 if [ "$TARGET_VER" != "all" ]; then
     VERSIONS=("$TARGET_VER")

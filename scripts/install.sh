@@ -41,7 +41,12 @@ echo -e "${BLUE}[1/7] Terdeteksi Sistem Operasi: ${OS} ${VER}${NC}"
 
 # 3. Install Minimal Dependencies for Panel Engine
 echo -e "${BLUE}[2/7] Menginstal dependensi inti engine panel (Git, Curl, SQLite3, PHP)...${NC}"
-apt-get update -y
+if [ "$OS" = "ubuntu" ] && [ -f /etc/apt/sources.list.d/php.list ]; then
+    if grep -q "packages.sury.org" /etc/apt/sources.list.d/php.list 2>/dev/null; then
+        rm -f /etc/apt/sources.list.d/php.list
+    fi
+fi
+apt-get update -y || true
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl \
     git \
@@ -54,39 +59,44 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
 
 # Register multi-version PHP repository (Ondrej Sury - supports Debian & Ubuntu)
 echo -e "${BLUE}[*] Mendaftarkan repositori multi-versi PHP (Ondrej Sury)...${NC}"
-mkdir -p /usr/share/keyrings
-if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
-    curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg || true
-fi
-
 CODENAME="${VERSION_CODENAME:-}"
 if [ -z "$CODENAME" ]; then
     CODENAME="$(lsb_release -sc 2>/dev/null || echo 'noble')"
 fi
 
-echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
-
-if [ "$OS" = "ubuntu" ] && [[ "$CODENAME" =~ ^(focal|jammy|noble)$ ]]; then
+if [ "$OS" = "ubuntu" ]; then
+    rm -f /etc/apt/sources.list.d/php.list
     add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+else
+    mkdir -p /usr/share/keyrings
+    if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
+        curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg || true
+    fi
+    echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
 fi
 apt-get update -y || true
 
-# Install base PHP CLI first to resolve default system version
-DEBIAN_FRONTEND=noninteractive apt-get install -y php-cli || true
-PHP_VER=$(php -r "echo PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;" 2>/dev/null || echo "8.3")
-echo -e "${BLUE}[*] Terdeteksi versi PHP inti sistem: ${PHP_VER}${NC}"
+# Kunci engine inti panel ke PHP 8.3 LTS (Standar Emas Stabilitas & Kompatibilitas Ekstensi)
+PANEL_PHP_VER="8.3"
+echo -e "${BLUE}[*] Memasang runtime engine inti panel: PHP ${PANEL_PHP_VER} LTS...${NC}"
 
-# Install version-specific PHP-FPM and required extensions, with generic fallback
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    php${PHP_VER}-fpm \
-    php${PHP_VER}-cli \
-    php${PHP_VER}-sqlite3 \
-    php${PHP_VER}-curl \
-    php${PHP_VER}-mbstring \
-    php${PHP_VER}-xml \
-    php${PHP_VER}-zip || \
+    php${PANEL_PHP_VER}-fpm \
+    php${PANEL_PHP_VER}-cli \
+    php${PANEL_PHP_VER}-sqlite3 \
+    php${PANEL_PHP_VER}-mysql \
+    php${PANEL_PHP_VER}-curl \
+    php${PANEL_PHP_VER}-mbstring \
+    php${PANEL_PHP_VER}-xml \
+    php${PANEL_PHP_VER}-zip || \
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    php-fpm php-cli php-sqlite3 php-curl php-mbstring php-xml php-zip || true
+    php-fpm php-cli php-sqlite3 php-mysql php-curl php-mbstring php-xml php-zip || true
+
+# Tentukan binary PHP-FPM dan PHP-CLI untuk Panel Engine (Terkunci ke PHP 8.3 LTS)
+PHP_FPM_BIN=$(command -v php-fpm8.3 || command -v php-fpm || echo "/usr/sbin/php-fpm8.3")
+PHP_CLI_BIN=$(command -v php8.3 || command -v php || echo "/usr/bin/php8.3")
+echo -e "${BLUE}[*] Menggunakan PHP-FPM binary: ${PHP_FPM_BIN}${NC}"
+echo -e "${BLUE}[*] Menggunakan PHP CLI binary : ${PHP_CLI_BIN}${NC}"
 
 # 4. Setup Isolated Directory Structure under /www
 echo -e "${BLUE}[3/7] Menyiapkan struktur direktori /www...${NC}"
@@ -139,7 +149,7 @@ find /www/panel/plugins -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
 # 5. Initialize Database & Generate Credentials
 echo -e "${BLUE}[4/7] Menginisialisasi basis data SQLite dan Security Entrance...${NC}"
 cd /www/panel
-php -r "
+${PHP_CLI_BIN} -r "
 define('PANEL_ROOT', '/www/panel');
 require_once '/www/panel/app/bootstrap.php';
 \App\Core\Database::init();
@@ -164,22 +174,7 @@ fi
 systemctl enable nginx 2>/dev/null || true
 systemctl start nginx 2>/dev/null || true
 
-# Tentukan binary PHP-FPM yang tersedia secara dinamis
-PHP_FPM_BIN=""
-if [ -n "${PHP_VER:-}" ] && command -v "php-fpm${PHP_VER}" >/dev/null 2>&1; then
-    PHP_FPM_BIN=$(command -v "php-fpm${PHP_VER}")
-elif command -v php-fpm >/dev/null 2>&1; then
-    PHP_FPM_BIN=$(command -v php-fpm)
-else
-    PHP_FPM_BIN=$(find /usr/sbin -name "php-fpm*" -executable 2>/dev/null | sort -V | tail -n 1)
-fi
-
-if [ -z "$PHP_FPM_BIN" ] || [ ! -x "$PHP_FPM_BIN" ]; then
-    PHP_FPM_BIN="/usr/sbin/php-fpm${PHP_VER:-8.3}"
-fi
-echo -e "${BLUE}[*] Menggunakan PHP-FPM binary: ${PHP_FPM_BIN}${NC}"
-
-PORT=$(php -r "
+PORT=$(${PHP_CLI_BIN} -r "
 define('PANEL_ROOT', '/www/panel');
 require_once '/www/panel/app/bootstrap.php';
 echo \App\Core\Database::getSetting('panel_port', '64448');
@@ -300,7 +295,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/www/panel
-ExecStart=/usr/bin/php /www/panel/task.php
+ExecStart=${PHP_CLI_BIN} /www/panel/task.php
 Restart=always
 RestartSec=3
 

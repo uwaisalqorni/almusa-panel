@@ -21,7 +21,7 @@ class SiteController
 
         $databases = $pdo->query("SELECT id, db_name, db_user, charset, access_host FROM databases ORDER BY db_name ASC")->fetchAll();
 
-        $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+        $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
         $rewrites = ['default', 'laravel', 'wordpress', 'thinkphp'];
 
         Response::view('sites/index', [
@@ -54,7 +54,7 @@ class SiteController
             Response::json(['success' => false, 'error' => 'Path document root tidak valid.'], 400);
         }
 
-        if (!in_array($phpVer, ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'])) {
+        if (!in_array($phpVer, ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'])) {
             Response::json(['success' => false, 'error' => 'Versi PHP tidak didukung.'], 400);
         }
 
@@ -112,7 +112,7 @@ class SiteController
         $siteId = (int)($_POST['site_id'] ?? 0);
         $newVersion = trim($_POST['php_version'] ?? '');
 
-        if (!in_array($newVersion, ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'])) {
+        if (!in_array($newVersion, ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'])) {
             Response::json(['success' => false, 'error' => 'Versi PHP tidak valid.'], 400);
         }
 

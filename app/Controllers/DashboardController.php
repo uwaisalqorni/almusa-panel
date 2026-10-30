@@ -33,7 +33,7 @@ class DashboardController
         ];
 
         // Check PHP-FPM versions installed
-        $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4'];
+        $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
         $phpStatus = [];
         foreach ($phpVersions as $ver) {
             $sock = "/run/php/php{$ver}-fpm.sock";

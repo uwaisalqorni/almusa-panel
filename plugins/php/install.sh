@@ -9,8 +9,8 @@ ACTION="${1:-install}"
 VERSION="${2:-8.3}"
 
 # Validate version format
-if ! [[ "$VERSION" =~ ^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4)$ ]]; then
-    echo "[ERROR] Unsupported PHP version: $VERSION. Supported: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4"
+if ! [[ "$VERSION" =~ ^(7\.4|8\.0|8\.1|8\.2|8\.3|8\.4|8\.5)$ ]]; then
+    echo "[ERROR] Unsupported PHP version: $VERSION. Supported: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5"
     exit 1
 fi
 
@@ -37,16 +37,16 @@ ensure_php_repo() {
     DEBIAN_FRONTEND=noninteractive apt-get update -y || true
     DEBIAN_FRONTEND=noninteractive apt-get install -y curl ca-certificates lsb-release apt-transport-https gnupg
 
-    mkdir -p /usr/share/keyrings
-    if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
-        echo "[INFO] Downloading Sury archive keyring..."
-        curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg || true
-    fi
-
-    echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
-
-    if [ "$DISTRO_ID" = "ubuntu" ] && [ "$CODENAME" = "focal" ]; then
-        add-apt-repository -y ppa:ondrej/php || true
+    if [ "$DISTRO_ID" = "ubuntu" ]; then
+        rm -f /etc/apt/sources.list.d/php.list
+        add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+    else
+        mkdir -p /usr/share/keyrings
+        if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
+            echo "[INFO] Downloading Sury archive keyring..."
+            curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg || true
+        fi
+        echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
     fi
 
     echo "[INFO] Updating apt package indices..."

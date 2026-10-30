@@ -27,21 +27,30 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# 2. Check and install minimal tools for downloading repo
+# 2. Check and clean conflicting repository sources if on Ubuntu
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "${ID:-}" = "ubuntu" ] && [ -f /etc/apt/sources.list.d/php.list ]; then
+        if grep -q "packages.sury.org" /etc/apt/sources.list.d/php.list 2>/dev/null; then
+            rm -f /etc/apt/sources.list.d/php.list
+        fi
+    fi
+fi
+
+# 3. Check and install minimal tools for downloading repo
 echo -e "${BLUE}[*] Memeriksa dependensi dasar (curl, git, ca-certificates)...${NC}"
-apt-get update -y
+apt-get update -y || true
 DEBIAN_FRONTEND=noninteractive apt-get install -y curl git ca-certificates
 
-# 3. Download Almusa Panel repository
+# 4. Download Almusa Panel repository
 INSTALLER_TMP="/tmp/almusa-installer-$$"
 rm -rf "$INSTALLER_TMP"
+trap 'rm -rf "$INSTALLER_TMP"' EXIT INT TERM
+
 echo -e "${BLUE}[*] Mengunduh paket installer Almusa Panel dari repositori resmi...${NC}"
 git clone --depth=1 https://github.com/uwaisalqorni/almusa-panel.git "$INSTALLER_TMP"
 
-# 4. Run the master installer
+# 5. Run the master installer
 echo -e "${BLUE}[*] Memulai instalasi utama...${NC}"
 cd "$INSTALLER_TMP"
-bash scripts/install.sh
-
-# 5. Clean up temporary installer directory
-rm -rf "$INSTALLER_TMP"
+bash scripts/install.sh "$@"

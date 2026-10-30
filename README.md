@@ -31,7 +31,7 @@
 - **Standalone Engine Terisolasi:** Berjalan pada port TCP khusus (default: `64448`) dengan database embedded SQLite3. Jika Nginx atau MySQL pengguna mengalami *crash*, panel kontrol tetap 100% aktif dan dapat diakses.
 - **Zero Web-Root RCE (Privilege Separation):** Request HTTP dari antarmuka web **tidak pernah** menjalankan `sudo` secara langsung. Web controller hanya memvalidasi input lalu memasukkan tugas ke antrean SQLite `tasks`. Daemon root (`task.php`) mengeksekusi script yang telah di-whitelist secara terisolasi.
 - **Dynamic Security Entrance Guard:** URL login diproteksi token rahasia (contoh: `/bhmbjoam`). Scanner bot yang mencoba mengakses `/` atau `/login` langsung menerima respons `404 Not Found`.
-- **Switch Versi PHP per-Domain Instan:** Jalankan PHP 7.4, 8.0, 8.1, 8.2, 8.3, dan 8.4 secara berdampingan. Anda dapat mengganti versi PHP website aktif hanya dengan 1 kali klik tanpa *downtime*.
+- **Switch Versi PHP per-Domain Instan:** Jalankan PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, dan 8.5 secara berdampingan. Anda dapat mengganti versi PHP website aktif hanya dengan 1 kali klik tanpa *downtime*.
 - **Cloudflare Tunnel Bawaan:**
   - **Quick Tunnel (.trycloudflare.com):** 1-klik online tanpa perlu akun atau konfigurasi DNS.
   - **Custom Domain (Zero Trust API):** Otomatisasi ingress rule dan pembuatan DNS CNAME ter-proxy langsung dari panel.
@@ -140,7 +140,7 @@ mypanel default
   1. Klik tombol **Tambah Website Baru**.
   2. Masukkan nama domain (contoh: `proyek-saya.com` atau `app.local`).
   3. Tentukan document root (default: `/www/wwwroot/<domain>`).
-  4. Pilih versi PHP yang diinginkan (`7.4` s/d `8.4`).
+  4. Pilih versi PHP yang diinginkan (`7.4` s/d `8.5`).
   5. Pilih template URL Rewrite (`default`, `laravel`, `wordpress`, atau `thinkphp`).
   6. Panel akan secara otomatis menyusun Virtual Host Nginx, membuat file `index.php` default, dan me-reload Nginx tanpa *downtime*.
 - **Switch Versi PHP Instan:**
@@ -156,7 +156,7 @@ mypanel default
 
 ### 4. App Store & Multi-Versi PHP
 - **Instalasi Service Inti:** Pasang Nginx Web Server, MariaDB Database Engine, atau Cloudflared Daemon dengan 1 klik.
-- **Multi-Versi PHP:** Pasang versi PHP spesifik (`7.4`, `8.0`, `8.1`, `8.2`, `8.3`, `8.4`). Setiap versi berjalan pada pool socket FPM masing-masing di `/run/php/php<ver>-fpm.sock`.
+- **Multi-Versi PHP:** Pasang versi PHP spesifik (`7.4`, `8.0`, `8.1`, `8.2`, `8.3`, `8.4`, `8.5`). Setiap versi berjalan pada pool socket FPM masing-masing di `/run/php/php<ver>-fpm.sock`.
 - **Ekstensi PHP 1-Klik:** Pasang ekstensi tambahan seperti `redis`, `imagick`, `memcached`, `xdebug`, `soap`, `intl`, atau `zip` langsung per-versi PHP.
 
 ### 5. Cloudflare Tunnel Integration
