@@ -1174,6 +1174,183 @@ a.row:hover { background: var(--surface-hover); text-decoration: none; }
     .auth-card { padding: 24px; }
 }
 
+/* ==========================================================================
+   SPEEDOMETER GAUGES & REALTIME TELEMETRY (DASHBOARD)
+   ========================================================================== */
+.gauge-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+@media (min-width: 1280px) {
+    .gauge-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .gauge-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.gauge-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 14px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+    overflow: hidden;
+}
+
+.gauge-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
+}
+
+[data-theme="dark"] .gauge-card:hover {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.gauge-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.gauge-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.gauge-title .icon {
+    color: var(--text-3);
+    width: 16px;
+    height: 16px;
+}
+
+.gauge-badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 99px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+}
+
+.gauge-svg-wrap {
+    position: relative;
+    width: 136px;
+    height: 104px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.gauge-svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.gauge-bg {
+    stroke: var(--surface-hover);
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+}
+
+[data-theme="dark"] .gauge-bg {
+    stroke: #1c212a;
+}
+
+.gauge-meter {
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.3s ease;
+}
+
+.gauge-center {
+    position: absolute;
+    top: 32px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    pointer-events: none;
+}
+
+.gauge-val {
+    font-size: 20px;
+    font-weight: 750;
+    letter-spacing: -0.03em;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.gauge-sub {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-3);
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+    max-width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gauge-spark-wrap {
+    width: 100%;
+    height: 22px;
+    margin-top: 4px;
+    margin-bottom: 6px;
+    opacity: 0.85;
+}
+
+.gauge-spark {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.gauge-foot {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-3);
+    border-top: 1px dashed var(--border);
+    padding-top: 7px;
+    margin-top: 2px;
+}
+
+.gauge-foot strong {
+    color: var(--text-2);
+    font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

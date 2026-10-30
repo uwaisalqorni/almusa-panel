@@ -3,9 +3,30 @@
  * Almusa Control Panel — Dashboard
  */
 $level = static fn($p) => $p >= 90 ? ' is-danger' : ($p >= 75 ? ' is-warn' : '');
-$cpu  = (float)$stats['cpu']['percent'];
-$ram  = (float)$stats['memory']['percent'];
-$disk = (float)$stats['disk']['percent'];
+$calcOffset = static fn($p) => round(153.6 * (1 - (max(0, min(100, (float)$p)) / 100)), 1);
+$strokeColor = static fn($p, $default = 'var(--accent)') => $p >= 90 ? 'var(--err)' : ($p >= 75 ? 'var(--warn)' : $default);
+
+$cpuPct = (float)($stats['cpu']['percent'] ?? 0);
+$cpuOffset = $calcOffset($cpuPct);
+$cpuStroke = $strokeColor($cpuPct, 'var(--accent)');
+
+$ramPct = (float)($stats['memory']['percent'] ?? 0);
+$ramOffset = $calcOffset($ramPct);
+$ramStroke = $strokeColor($ramPct, 'var(--info)');
+
+$net = $stats['network'] ?? [];
+$netRate = (float)($net['rx_rate'] ?? 0) + (float)($net['tx_rate'] ?? 0);
+$netPct = min(100, max(0, round(($netRate / (1024 * 1024 * 5)) * 100)));
+$netOffset = $calcOffset($netPct > 0 ? max(8, $netPct) : 0);
+$netStroke = 'var(--ok)';
+
+$mysql = $stats['mysql'] ?? [];
+$mysqlActive = !empty($mysql['active']);
+$mysqlPct = (float)($mysql['percent'] ?? 0);
+$mysqlOffset = $mysqlActive ? $calcOffset($mysqlPct) : 153.6;
+$mysqlStroke = $mysqlActive ? $strokeColor($mysqlPct, 'var(--warn)') : 'var(--text-3)';
+
+$diskPct = (float)($stats['disk']['percent'] ?? 0);
 ?>
 
 <header class="page-header">
@@ -48,35 +69,154 @@ $disk = (float)$stats['disk']['percent'];
         <section class="card" aria-labelledby="resTitle">
             <div class="card-header">
                 <div>
-                    <h2 class="card-title" id="resTitle">Penggunaan sumber daya</h2>
-                    <p class="card-desc">Diperbarui otomatis setiap 4 detik</p>
+                    <h2 class="card-title" id="resTitle">Telemetri &amp; Sumber Daya Server</h2>
+                    <p class="card-desc">Kecepatan &amp; metrik real-time diperbarui otomatis tiap 4 detik</p>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <span class="badge badge-neutral" style="font-size: 11px;">
+                        <span class="dot dot-ok"></span> Live Stream
+                    </span>
                 </div>
             </div>
             <div class="card-body">
-                <div class="meters">
-                    <div>
-                        <div class="meter-head">
-                            <span class="meter-label"><?= ui_icon('cpu') ?> CPU</span>
-                            <span class="meter-value" id="statCpuPercent"><?= e($stats['cpu']['percent']) ?>%</span>
+                <div class="gauge-grid">
+                    <!-- 1. CPU Speedometer -->
+                    <div class="gauge-card">
+                        <div class="gauge-header">
+                            <span class="gauge-title"><?= ui_icon('cpu') ?> CPU</span>
+                            <span class="gauge-badge" id="gaugeCpuBadge"><?= e($stats['cpu']['cores'] ?? 1) ?> Cores</span>
                         </div>
-                        <div class="meter-track"><div class="meter-fill<?= $level($cpu) ?>" id="statCpuFill" style="width: <?= e($cpu) ?>%"></div></div>
-                        <div class="meter-foot"><span><?= e($stats['cpu']['cores']) ?> core</span></div>
+                        <div class="gauge-svg-wrap">
+                            <svg class="gauge-svg" viewBox="0 0 120 110">
+                                <circle class="gauge-bg" cx="60" cy="55" r="40" stroke-dasharray="153.6 251.3" transform="rotate(160 60 55)" />
+                                <circle class="gauge-meter" id="gaugeCpuMeter" cx="60" cy="55" r="40"
+                                        stroke="<?= e($cpuStroke) ?>" stroke-dasharray="153.6 251.3" stroke-dashoffset="<?= e($cpuOffset) ?>"
+                                        transform="rotate(160 60 55)" />
+                            </svg>
+                            <div class="gauge-center">
+                                <div class="gauge-val" id="gaugeCpuVal"><?= e($cpuPct) ?>%</div>
+                                <div class="gauge-sub">Penggunaan</div>
+                            </div>
+                        </div>
+                        <div class="gauge-spark-wrap">
+                            <svg class="gauge-spark" id="gaugeCpuSpark" viewBox="0 0 100 22" preserveAspectRatio="none">
+                                <polygon points="" fill="var(--accent-soft)" />
+                                <polyline points="" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" />
+                            </svg>
+                        </div>
+                        <div class="gauge-foot">
+                            <span>Load 1/5/15m:</span>
+                            <strong><span id="statLoad1m"><?= e($stats['load']['1m'] ?? 0) ?></span> · <span id="statLoad5m"><?= e($stats['load']['5m'] ?? 0) ?></span> · <span id="statLoad15m"><?= e($stats['load']['15m'] ?? 0) ?></span></strong>
+                        </div>
                     </div>
-                    <div>
-                        <div class="meter-head">
-                            <span class="meter-label"><?= ui_icon('memory') ?> Memori</span>
-                            <span class="meter-value" id="statRamPercent"><?= e($stats['memory']['percent']) ?>%</span>
+
+                    <!-- 2. RAM / Memori Speedometer -->
+                    <div class="gauge-card">
+                        <div class="gauge-header">
+                            <span class="gauge-title"><?= ui_icon('memory') ?> RAM</span>
+                            <span class="gauge-badge" id="gaugeRamBadge"><?= e($stats['memory']['free_mb'] ?? 0) ?> MB bebas</span>
                         </div>
-                        <div class="meter-track"><div class="meter-fill<?= $level($ram) ?>" id="statRamFill" style="width: <?= e($ram) ?>%"></div></div>
-                        <div class="meter-foot"><span id="statRamSub"><?= e($stats['memory']['formatted'] ?? '') ?></span></div>
+                        <div class="gauge-svg-wrap">
+                            <svg class="gauge-svg" viewBox="0 0 120 110">
+                                <circle class="gauge-bg" cx="60" cy="55" r="40" stroke-dasharray="153.6 251.3" transform="rotate(160 60 55)" />
+                                <circle class="gauge-meter" id="gaugeRamMeter" cx="60" cy="55" r="40"
+                                        stroke="<?= e($ramStroke) ?>" stroke-dasharray="153.6 251.3" stroke-dashoffset="<?= e($ramOffset) ?>"
+                                        transform="rotate(160 60 55)" />
+                            </svg>
+                            <div class="gauge-center">
+                                <div class="gauge-val" id="gaugeRamVal"><?= e($ramPct) ?>%</div>
+                                <div class="gauge-sub" id="gaugeRamSub"><?= e($stats['memory']['formatted'] ?? '') ?></div>
+                            </div>
+                        </div>
+                        <div class="gauge-spark-wrap">
+                            <svg class="gauge-spark" id="gaugeRamSpark" viewBox="0 0 100 22" preserveAspectRatio="none">
+                                <polygon points="" fill="var(--info-soft)" />
+                                <polyline points="" fill="none" stroke="var(--info)" stroke-width="1.6" stroke-linecap="round" />
+                            </svg>
+                        </div>
+                        <div class="gauge-foot">
+                            <span>Terpakai:</span>
+                            <strong id="gaugeRamFoot"><?= e($stats['memory']['used_mb'] ?? 0) ?> MB / <?= e($stats['memory']['total_mb'] ?? 0) ?> MB</strong>
+                        </div>
                     </div>
-                    <div>
-                        <div class="meter-head">
-                            <span class="meter-label"><?= ui_icon('disk') ?> Disk /</span>
-                            <span class="meter-value" id="statDiskPercent"><?= e($stats['disk']['percent']) ?>%</span>
+
+                    <!-- 3. Trafik Jaringan (Network) Speedometer -->
+                    <div class="gauge-card">
+                        <div class="gauge-header">
+                            <span class="gauge-title"><?= ui_icon('activity') ?> Trafik Jaringan</span>
+                            <span class="gauge-badge" style="color:var(--ok)">Live I/O</span>
                         </div>
-                        <div class="meter-track"><div class="meter-fill<?= $level($disk) ?>" id="statDiskFill" style="width: <?= e($disk) ?>%"></div></div>
-                        <div class="meter-foot"><span><?= e($stats['disk']['formatted'] ?? '') ?></span></div>
+                        <div class="gauge-svg-wrap">
+                            <svg class="gauge-svg" viewBox="0 0 120 110">
+                                <circle class="gauge-bg" cx="60" cy="55" r="40" stroke-dasharray="153.6 251.3" transform="rotate(160 60 55)" />
+                                <circle class="gauge-meter" id="gaugeNetMeter" cx="60" cy="55" r="40"
+                                        stroke="<?= e($netStroke) ?>" stroke-dasharray="153.6 251.3" stroke-dashoffset="<?= e($netOffset) ?>"
+                                        transform="rotate(160 60 55)" />
+                            </svg>
+                            <div class="gauge-center">
+                                <div class="gauge-val" id="gaugeNetVal" style="font-size:16px"><?= e($net['rx_formatted'] ?? '0 B/s') ?></div>
+                                <div class="gauge-sub" id="gaugeNetSub">↑ <?= e($net['tx_formatted'] ?? '0 B/s') ?></div>
+                            </div>
+                        </div>
+                        <div class="gauge-spark-wrap">
+                            <svg class="gauge-spark" id="gaugeNetSpark" viewBox="0 0 100 22" preserveAspectRatio="none">
+                                <polygon points="" fill="var(--ok-soft)" />
+                                <polyline points="" fill="none" stroke="var(--ok)" stroke-width="1.6" stroke-linecap="round" />
+                            </svg>
+                        </div>
+                        <div class="gauge-foot">
+                            <span>Total Transfer:</span>
+                            <strong id="gaugeNetTotal">RX: <?= e($net['rx_total'] ?? '0 B') ?> · TX: <?= e($net['tx_total'] ?? '0 B') ?></strong>
+                        </div>
+                    </div>
+
+                    <!-- 4. MySQL / MariaDB Speedometer -->
+                    <div class="gauge-card">
+                        <div class="gauge-header">
+                            <span class="gauge-title"><?= ui_icon('database') ?> MySQL / MariaDB</span>
+                            <span class="gauge-badge" id="gaugeMysqlBadge"><?= $mysqlActive ? 'QPS ' . e($mysql['qps'] ?? 0) : 'Offline' ?></span>
+                        </div>
+                        <div class="gauge-svg-wrap">
+                            <svg class="gauge-svg" viewBox="0 0 120 110">
+                                <circle class="gauge-bg" cx="60" cy="55" r="40" stroke-dasharray="153.6 251.3" transform="rotate(160 60 55)" />
+                                <circle class="gauge-meter" id="gaugeMysqlMeter" cx="60" cy="55" r="40"
+                                        stroke="<?= e($mysqlStroke) ?>" stroke-dasharray="153.6 251.3" stroke-dashoffset="<?= e($mysqlOffset) ?>"
+                                        transform="rotate(160 60 55)" />
+                            </svg>
+                            <div class="gauge-center">
+                                <div class="gauge-val" id="gaugeMysqlVal" style="font-size:<?= $mysqlActive ? '17px' : '15px' ?>">
+                                    <?= $mysqlActive ? e($mysql['connected'] ?? 0) . ' / ' . e($mysql['max_connections'] ?? 151) : 'Offline' ?>
+                                </div>
+                                <div class="gauge-sub" id="gaugeMysqlSub">
+                                    <?= $mysqlActive ? 'Koneksi (' . e($mysqlPct) . '%)' : 'Service Nonaktif' ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="gauge-spark-wrap">
+                            <svg class="gauge-spark" id="gaugeMysqlSpark" viewBox="0 0 100 22" preserveAspectRatio="none">
+                                <polygon points="" fill="var(--warn-soft)" />
+                                <polyline points="" fill="none" stroke="var(--warn)" stroke-width="1.6" stroke-linecap="round" />
+                            </svg>
+                        </div>
+                        <div class="gauge-foot">
+                            <span>Status:</span>
+                            <strong id="gaugeMysqlFoot"><?= $mysqlActive ? 'Uptime ' . e($mysql['uptime'] ?? '') . ' · Slow: ' . e($mysql['slow_queries'] ?? 0) : 'MariaDB tidak berjalan' ?></strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compact Disk Bar Row -->
+                <div style="padding-top: 14px; border-top: 1px solid var(--border)">
+                    <div class="meter-head" style="margin-bottom:6px">
+                        <span class="meter-label"><?= ui_icon('disk') ?> Penyimpanan Root (/)</span>
+                        <span class="meter-value" id="statDiskPercent" style="font-size:15px"><?= e($stats['disk']['percent']) ?>%</span>
+                    </div>
+                    <div class="meter-track" style="height:7px;">
+                        <div class="meter-fill<?= $level($diskPct) ?>" id="statDiskFill" style="width: <?= e($diskPct) ?>%"></div>
+                    </div>
+                    <div class="meter-foot" style="margin-top:6px">
+                        <span id="statDiskFormatted"><?= e($stats['disk']['formatted'] ?? '') ?></span>
+                        <span id="statDiskFree"><?= e($stats['disk']['free_gb'] ?? '') ?> GB bebas</span>
                     </div>
                 </div>
             </div>

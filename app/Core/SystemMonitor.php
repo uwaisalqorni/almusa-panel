@@ -4,12 +4,16 @@ namespace App\Core;
 
 class SystemMonitor
 {
+    private static ?int $cachedCores = null;
+
     public static function getStats(): array
     {
         return [
             'cpu'        => self::getCpuUsage(),
             'memory'     => self::getMemoryUsage(),
             'disk'       => self::getDiskUsage(),
+            'network'    => self::getNetworkUsage(),
+            'mysql'      => self::getMysqlStats(),
             'load'       => self::getLoadAverage(),
             'uptime'     => self::getUptime(),
             'os'         => self::getOsInfo(),
@@ -23,22 +27,22 @@ class SystemMonitor
         $currentStat = @file('/proc/stat');
 
         if (!$currentStat || empty($currentStat[0])) {
-            return ['percent' => 0, 'cores' => 1];
+            return ['percent' => 0.0, 'cores' => 1];
         }
 
-        $cores = 1;
-        $cpuInfo = @file('/proc/cpuinfo');
-        if ($cpuInfo) {
+        if (self::$cachedCores === null) {
             $coresCount = 0;
-            foreach ($cpuInfo as $line) {
-                if (preg_match('/^processor\s*:\s*\d+/', $line)) {
-                    $coresCount++;
+            $cpuInfo = @file('/proc/cpuinfo');
+            if ($cpuInfo) {
+                foreach ($cpuInfo as $line) {
+                    if (preg_match('/^processor\s*:\s*\d+/', $line)) {
+                        $coresCount++;
+                    }
                 }
             }
-            if ($coresCount > 0) {
-                $cores = $coresCount;
-            }
+            self::$cachedCores = max(1, $coresCount);
         }
+        $cores = self::$cachedCores;
 
         $fields = preg_split('/\s+/', trim($currentStat[0]));
         // $fields[0] is 'cpu', 1=user, 2=nice, 3=system, 4=idle, 5=iowait, 6=irq, 7=softirq, 8=steal
@@ -54,10 +58,20 @@ class SystemMonitor
         $total = $user + $nice + $system + $idle + $iowait + $irq + $softirq + $steal;
         $idleTotal = $idle + $iowait;
 
+        $now = microtime(true);
         $percent = 0.0;
+
         if (file_exists($cacheFile)) {
             $prev = json_decode(@file_get_contents($cacheFile), true);
             if ($prev && isset($prev['total'], $prev['idleTotal'])) {
+                $timeDiff = isset($prev['time']) ? ($now - (float)$prev['time']) : 1.0;
+                // If polled too fast (< 0.8s), reuse previous percent to avoid delta jitter across tabs
+                if ($timeDiff < 0.8 && isset($prev['percent'])) {
+                    return [
+                        'percent' => (float)$prev['percent'],
+                        'cores'   => $cores,
+                    ];
+                }
                 $diffTotal = $total - $prev['total'];
                 $diffIdle = $idleTotal - $prev['idleTotal'];
                 if ($diffTotal > 0) {
@@ -67,22 +81,161 @@ class SystemMonitor
             }
         }
 
+        $percent = max(0.0, min(100.0, $percent));
+
         @file_put_contents($cacheFile, json_encode([
             'total'     => $total,
             'idleTotal' => $idleTotal,
-            'time'      => microtime(true),
+            'time'      => $now,
+            'percent'   => $percent,
         ]));
-
-        if ($percent < 0) {
-            $percent = 0.0;
-        } elseif ($percent > 100) {
-            $percent = 100.0;
-        }
 
         return [
             'percent' => $percent,
             'cores'   => $cores,
         ];
+    }
+
+    public static function getNetworkUsage(): array
+    {
+        $cacheFile = '/tmp/almusa_net_stat.json';
+        $lines = @file('/proc/net/dev');
+        $rx = 0.0;
+        $tx = 0.0;
+
+        if ($lines) {
+            foreach ($lines as $line) {
+                if (!str_contains($line, ':')) continue;
+                [$iface, $data] = explode(':', $line, 2);
+                $iface = trim($iface);
+                if ($iface === 'lo' || str_starts_with($iface, 'docker') || str_starts_with($iface, 'veth')) {
+                    continue;
+                }
+                $cols = preg_split('/\s+/', trim($data));
+                $rx += (float)($cols[0] ?? 0);
+                $tx += (float)($cols[8] ?? 0);
+            }
+        }
+
+        $now = microtime(true);
+        $rxRate = 0.0; // bytes/sec
+        $txRate = 0.0;
+
+        if (file_exists($cacheFile)) {
+            $prev = json_decode(@file_get_contents($cacheFile), true);
+            if ($prev && isset($prev['time'], $prev['rx'], $prev['tx'])) {
+                $timeDiff = max(0.1, $now - (float)$prev['time']);
+                if ($timeDiff < 0.8 && isset($prev['rx_rate'], $prev['tx_rate'])) {
+                    $rxRate = (float)$prev['rx_rate'];
+                    $txRate = (float)$prev['tx_rate'];
+                } else {
+                    $rxRate = max(0.0, ($rx - (float)$prev['rx']) / $timeDiff);
+                    $txRate = max(0.0, ($tx - (float)$prev['tx']) / $timeDiff);
+                }
+            }
+        }
+
+        @file_put_contents($cacheFile, json_encode([
+            'rx'      => $rx,
+            'tx'      => $tx,
+            'time'    => $now,
+            'rx_rate' => $rxRate,
+            'tx_rate' => $txRate,
+        ]));
+
+        return [
+            'rx_rate'       => round($rxRate, 1),
+            'tx_rate'       => round($txRate, 1),
+            'rx_formatted'  => self::formatBytes($rxRate) . '/s',
+            'tx_formatted'  => self::formatBytes($txRate) . '/s',
+            'rx_total'      => self::formatBytes($rx),
+            'tx_total'      => self::formatBytes($tx),
+        ];
+    }
+
+    public static function getMysqlStats(): array
+    {
+        $cacheFile = '/tmp/almusa_mysql_stat.json';
+        $now = time();
+
+        if (file_exists($cacheFile)) {
+            $cached = json_decode(@file_get_contents($cacheFile), true);
+            if ($cached && isset($cached['_cached_at']) && ($now - (int)$cached['_cached_at'] < 3)) {
+                unset($cached['_cached_at']);
+                return $cached;
+            }
+        }
+
+        $isActive = self::isServiceActive('mysql') || self::isServiceActive('mariadb');
+        if (!$isActive) {
+            $res = [
+                'active'          => false,
+                'connected'       => 0,
+                'max_connections' => 151,
+                'percent'         => 0.0,
+                'qps'             => 0.0,
+                'slow_queries'    => 0,
+                'uptime'          => 'Offline',
+            ];
+            @file_put_contents($cacheFile, json_encode(array_merge($res, ['_cached_at' => $now])));
+            return $res;
+        }
+
+        $pass = Database::getSetting('mysql_root_pass', '');
+        $options = [
+            \PDO::ATTR_TIMEOUT => 1,
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_SILENT,
+        ];
+
+        try {
+            try {
+                $pdo = new \PDO('mysql:host=127.0.0.1;port=3306', 'root', $pass, $options);
+            } catch (\Exception $e) {
+                $pdo = new \PDO('mysql:unix_socket=/var/run/mysqld/mysqld.sock', 'root', '', $options);
+            }
+
+            $stmt = $pdo->query("SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected', 'Questions', 'Uptime', 'Slow_queries')");
+            $status = $stmt ? $stmt->fetchAll(\PDO::FETCH_KEY_PAIR) : [];
+
+            $stmt2 = $pdo->query("SHOW VARIABLES LIKE 'max_connections'");
+            $vars = $stmt2 ? $stmt2->fetchAll(\PDO::FETCH_KEY_PAIR) : [];
+
+            $connected = (int)($status['Threads_connected'] ?? 0);
+            $maxConn = max(1, (int)($vars['max_connections'] ?? 151));
+            $questions = (int)($status['Questions'] ?? 0);
+            $uptimeSec = max(1, (int)($status['Uptime'] ?? 1));
+            $slow = (int)($status['Slow_queries'] ?? 0);
+
+            $percent = round(($connected / $maxConn) * 100, 1);
+            $qps = round($questions / $uptimeSec, 1);
+
+            $uptimeDays = floor($uptimeSec / 86400);
+            $uptimeHours = floor(($uptimeSec % 86400) / 3600);
+            $uptimeStr = $uptimeDays > 0 ? "{$uptimeDays}d {$uptimeHours}h" : "{$uptimeHours}h";
+
+            $res = [
+                'active'          => true,
+                'connected'       => $connected,
+                'max_connections' => $maxConn,
+                'percent'         => min(100.0, $percent),
+                'qps'             => $qps,
+                'slow_queries'    => $slow,
+                'uptime'          => $uptimeStr,
+            ];
+        } catch (\Exception $e) {
+            $res = [
+                'active'          => false,
+                'connected'       => 0,
+                'max_connections' => 151,
+                'percent'         => 0.0,
+                'qps'             => 0.0,
+                'slow_queries'    => 0,
+                'uptime'          => 'Auth/Conn Error',
+            ];
+        }
+
+        @file_put_contents($cacheFile, json_encode(array_merge($res, ['_cached_at' => $now])));
+        return $res;
     }
 
     public static function getMemoryUsage(): array

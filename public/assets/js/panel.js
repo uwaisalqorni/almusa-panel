@@ -312,12 +312,72 @@
     };
 
     /* --------------------------------------------------- system stats poller */
+    var statsHistory = {
+        cpu: [],
+        ram: [],
+        net: [],
+        mysql: []
+    };
+    var MAX_HISTORY = 18;
+
     function setMeter(fill, pct) {
         if (!fill) return;
         pct = Math.max(0, Math.min(100, Number(pct) || 0));
         fill.style.width = pct + '%';
         fill.classList.toggle('is-warn', pct >= 75 && pct < 90);
         fill.classList.toggle('is-danger', pct >= 90);
+    }
+
+    function setGauge(meterId, pct, defaultColor) {
+        var el = document.getElementById(meterId);
+        if (!el) return;
+        pct = Math.max(0, Math.min(100, Number(pct) || 0));
+        // Total arc length for 220-degree dial with r=40 is ~153.6 (dasharray: 153.6 251.3)
+        var totalLength = 153.6;
+        var offset = totalLength * (1 - (pct / 100));
+        el.style.strokeDashoffset = offset.toFixed(1);
+
+        if (pct >= 90) {
+            el.style.stroke = 'var(--err)';
+        } else if (pct >= 75) {
+            el.style.stroke = 'var(--warn)';
+        } else {
+            el.style.stroke = defaultColor || 'var(--accent)';
+        }
+    }
+
+    function renderSparkline(svgId, dataArray, maxVal) {
+        var svg = document.getElementById(svgId);
+        if (!svg) return;
+        var polyline = svg.querySelector('polyline');
+        var polygon = svg.querySelector('polygon');
+        if (!polyline) return;
+        var len = dataArray.length;
+        if (len < 2) return;
+
+        var width = 100;
+        var height = 22;
+        var max = maxVal || 100;
+        var step = width / (MAX_HISTORY - 1);
+        var startIndex = MAX_HISTORY - len;
+        var points = [];
+
+        for (var i = 0; i < len; i++) {
+            var x = (startIndex + i) * step;
+            var val = Math.max(0, Math.min(max, dataArray[i]));
+            var y = height - (val / max) * (height - 4) - 2;
+            points.push(x.toFixed(1) + ',' + y.toFixed(1));
+        }
+
+        var ptsStr = points.join(' ');
+        polyline.setAttribute('points', ptsStr);
+
+        if (polygon) {
+            var firstX = (startIndex * step).toFixed(1);
+            var lastX = ((startIndex + len - 1) * step).toFixed(1);
+            var polyPts = firstX + ',' + height + ' ' + ptsStr + ' ' + lastX + ',' + height;
+            polygon.setAttribute('points', polyPts);
+        }
     }
 
     function setText(id, value) {
@@ -333,19 +393,72 @@
             if (!json.success || !json.data) return;
             var d = json.data;
 
+            // Header mini meters
             setText('headerCpuVal', d.cpu.percent + '%');
             setMeter(document.getElementById('headerCpuFill'), d.cpu.percent);
             setText('headerRamVal', d.memory.percent + '%');
             setMeter(document.getElementById('headerRamFill'), d.memory.percent);
 
-            setText('statCpuPercent', d.cpu.percent + '%');
-            setMeter(document.getElementById('statCpuFill'), d.cpu.percent);
-            setText('statRamPercent', d.memory.percent + '%');
-            setMeter(document.getElementById('statRamFill'), d.memory.percent);
-            if (d.memory.formatted) setText('statRamSub', d.memory.formatted);
-            setText('statDiskPercent', d.disk.percent + '%');
-            setMeter(document.getElementById('statDiskFill'), d.disk.percent);
+            // Speedometer Gauges
+            if (d.cpu) {
+                setGauge('gaugeCpuMeter', d.cpu.percent, 'var(--accent)');
+                setText('gaugeCpuVal', d.cpu.percent + '%');
+                if (d.cpu.cores) setText('gaugeCpuBadge', d.cpu.cores + ' Cores');
+                statsHistory.cpu.push(d.cpu.percent);
+                if (statsHistory.cpu.length > MAX_HISTORY) statsHistory.cpu.shift();
+                renderSparkline('gaugeCpuSpark', statsHistory.cpu, 100);
+            }
 
+            if (d.memory) {
+                setGauge('gaugeRamMeter', d.memory.percent, 'var(--info)');
+                setText('gaugeRamVal', d.memory.percent + '%');
+                if (d.memory.formatted) setText('gaugeRamSub', d.memory.formatted);
+                if (d.memory.free_mb != null) setText('gaugeRamBadge', d.memory.free_mb + ' MB bebas');
+                statsHistory.ram.push(d.memory.percent);
+                if (statsHistory.ram.length > MAX_HISTORY) statsHistory.ram.shift();
+                renderSparkline('gaugeRamSpark', statsHistory.ram, 100);
+            }
+
+            if (d.network) {
+                var netRate = (d.network.rx_rate || 0) + (d.network.tx_rate || 0);
+                var netPct = Math.min(100, Math.max(0, Math.round((netRate / (1024 * 1024 * 5)) * 100)));
+                setGauge('gaugeNetMeter', netPct > 0 ? Math.max(8, netPct) : 0, 'var(--ok)');
+                setText('gaugeNetVal', d.network.rx_formatted);
+                setText('gaugeNetSub', '↑ ' + d.network.tx_formatted);
+                setText('gaugeNetTotal', 'RX: ' + d.network.rx_total + ' · TX: ' + d.network.tx_total);
+                statsHistory.net.push(netPct);
+                if (statsHistory.net.length > MAX_HISTORY) statsHistory.net.shift();
+                renderSparkline('gaugeNetSpark', statsHistory.net, 100);
+            }
+
+            if (d.mysql) {
+                if (d.mysql.active) {
+                    setGauge('gaugeMysqlMeter', d.mysql.percent, 'var(--warn)');
+                    setText('gaugeMysqlVal', d.mysql.connected + ' / ' + d.mysql.max_connections);
+                    setText('gaugeMysqlSub', 'Koneksi (' + d.mysql.percent + '%)');
+                    setText('gaugeMysqlBadge', 'QPS ' + d.mysql.qps);
+                    setText('gaugeMysqlFoot', 'Uptime ' + d.mysql.uptime + ' · Slow: ' + d.mysql.slow_queries);
+                    statsHistory.mysql.push(d.mysql.percent);
+                    if (statsHistory.mysql.length > MAX_HISTORY) statsHistory.mysql.shift();
+                    renderSparkline('gaugeMysqlSpark', statsHistory.mysql, 100);
+                } else {
+                    setGauge('gaugeMysqlMeter', 0, 'var(--text-3)');
+                    setText('gaugeMysqlVal', 'Offline');
+                    setText('gaugeMysqlSub', 'Service Nonaktif');
+                    setText('gaugeMysqlBadge', 'Inactive');
+                    setText('gaugeMysqlFoot', 'MariaDB tidak berjalan');
+                }
+            }
+
+            // Disk compact bar
+            if (d.disk) {
+                setText('statDiskPercent', d.disk.percent + '%');
+                setMeter(document.getElementById('statDiskFill'), d.disk.percent);
+                if (d.disk.formatted) setText('statDiskFormatted', d.disk.formatted);
+                if (d.disk.free_gb != null) setText('statDiskFree', d.disk.free_gb + ' GB bebas');
+            }
+
+            // Load Average
             if (d.load) {
                 setText('statLoad1m', d.load['1m']);
                 setText('statLoad5m', d.load['5m']);

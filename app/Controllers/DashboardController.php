@@ -58,6 +58,10 @@ class DashboardController
 
     public function stats(): void
     {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+        header('Cache-Control: no-store, no-cache, must-revalidate');
         $stats = SystemMonitor::getStats();
         Response::json([
             'success' => true,
