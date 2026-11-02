@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\Crypto;
 use App\Core\Database;
 use App\Core\EnvManager;
 use App\Core\Response;
@@ -736,7 +737,12 @@ class SiteController
             Response::json(['success' => false, 'error' => 'Database tidak ditemukan di panel.'], 404);
         }
 
-        $plainPass = base64_decode((string)$db['db_password_enc']);
+        $rawPass = (string)($db['db_password_enc'] ?? '');
+        if (Crypto::isEncrypted($rawPass)) {
+            $plainPass = (string)Crypto::decrypt($rawPass);
+        } else {
+            $plainPass = base64_decode($rawPass, true) ?: $rawPass;
+        }
         $projectPath = EnvManager::resolveProjectRoot($site['docroot']);
 
         $updated = EnvManager::updateEnv($projectPath, [

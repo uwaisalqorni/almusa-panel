@@ -53,7 +53,12 @@
                         </td>
                     </tr>
                 <?php else: foreach ($databases as $db):
-                    $plain = base64_decode($db['db_password_enc'] ?? '') ?: '';
+                    $rawPass = (string)($db['db_password_enc'] ?? '');
+                    if (\App\Core\Crypto::isEncrypted($rawPass)) {
+                        $plain = (string)\App\Core\Crypto::decrypt($rawPass);
+                    } else {
+                        $plain = base64_decode($rawPass, true) ?: $rawPass;
+                    }
                 ?>
                     <tr>
                         <td>

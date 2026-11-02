@@ -105,6 +105,7 @@ class DashboardController
 
     public function saveSettings(): void
     {
+        $pdo = Database::getInstance();
         $title = trim($_POST['panel_title'] ?? 'Almusa Server Panel');
         $entrance = trim($_POST['entrance_path'] ?? '');
         $port = trim($_POST['panel_port'] ?? '64448');
@@ -143,7 +144,65 @@ class DashboardController
             Database::setSetting('update_repo_url', $updateRepo);
         }
         if ($mysqlPass !== '') {
+            $oldPass = Database::getSetting('mysql_root_pass', '');
+            if ($oldPass !== '' && $oldPass !== $mysqlPass) {
+                Database::setSetting('mysql_root_pass_prev', $oldPass);
+            }
             Database::setSetting('mysql_root_pass', $mysqlPass);
+
+            // Sinkronisasi perubahan password ke dalam engine MySQL/MariaDB
+            try {
+                $pdoMy = null;
+                $options = [
+                    \PDO::ATTR_ERRMODE            => \PDO::ERRMODE_EXCEPTION,
+                    \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+                ];
+
+                // Coba 1: TCP dengan password lama
+                try {
+                    $pdoMy = new \PDO("mysql:host=127.0.0.1;port=3306;charset=utf8mb4", 'root', $oldPass, $options);
+                } catch (\Throwable $e1) {
+                    // Coba 2: Socket dengan password lama
+                    try {
+                        $pdoMy = new \PDO("mysql:unix_socket=/var/run/mysqld/mysqld.sock;charset=utf8mb4", 'root', $oldPass, $options);
+                    } catch (\Throwable $e2) {
+                        // Coba 3: Socket tanpa password (auth_socket)
+                        try {
+                            $pdoMy = new \PDO("mysql:unix_socket=/var/run/mysqld/mysqld.sock;charset=utf8mb4", 'root', '', $options);
+                        } catch (\Throwable $e3) {}
+                    }
+                }
+
+                if ($pdoMy) {
+                    $quoted = $pdoMy->quote($mysqlPass);
+                    // Pertahankan dual-auth (unix_socket + password) pada MariaDB agar akses root lokal tidak pernah terkunci
+                    try {
+                        $pdoMy->exec("ALTER USER 'root'@'localhost' IDENTIFIED VIA unix_socket OR mysql_native_password USING PASSWORD({$quoted});");
+                    } catch (\Throwable $eAlter) {
+                        $pdoMy->exec("ALTER USER 'root'@'localhost' IDENTIFIED BY {$quoted};");
+                    }
+                    $pdoMy->exec("CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY {$quoted};");
+                    $pdoMy->exec("ALTER USER 'root'@'127.0.0.1' IDENTIFIED BY {$quoted};");
+                    $pdoMy->exec("GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;");
+                    $pdoMy->exec("GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;");
+                    $pdoMy->exec("FLUSH PRIVILEGES;");
+                    $synced = true;
+                }
+            } catch (\Throwable $e) {
+                $synced = false;
+            }
+
+            // Jika eksekusi langsung via web gagal, antrekan ke background worker (berjalan dengan hak akses root OS)
+            if (empty($synced)) {
+                $taskStmt = $pdo->prepare("
+                    INSERT INTO tasks (title, action, payload, status)
+                    VALUES (:title, 'mysql_root_pass', :payload, 'pending')
+                ");
+                $taskStmt->execute([
+                    ':title'   => 'Sinkronisasi Password Root MySQL / MariaDB',
+                    ':payload' => json_encode(['password' => $mysqlPass]),
+                ]);
+            }
         }
 
         // Update port Nginx jika port diubah
@@ -171,7 +230,7 @@ class DashboardController
         // Update entrance.txt file
         $entranceFile = $root . '/data/entrance.txt';
         @file_put_contents($entranceFile, $entrance);
-        \App\Core\Database::fixPermissions($entranceFile, 0664);
+        Database::fixPermissions($entranceFile, 0664);
 
         $_SESSION['settings_msg'] = 'Pengaturan berhasil disimpan. Jika port atau entrance diubah, sesuaikan URL akses Anda.';
         Response::redirect('/settings');

@@ -14,8 +14,11 @@ while [ -h "$SOURCE" ]; do
 done
 PANEL_ROOT="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 
-# Resolve dedicated Panel PHP binary (prefer php8.3)
-PHP_BIN=$(command -v php8.3 || command -v php || echo "/usr/bin/php")
+# Resolve dedicated Panel PHP binary dynamically
+PHP_BIN=$(command -v php || find /usr/bin -maxdepth 1 \( -type f -o -type l \) -name "php[0-9]*" 2>/dev/null | sort -V | tail -n 1 || echo "/usr/bin/php")
+if [ -z "$PHP_BIN" ] || [ ! -x "$PHP_BIN" ]; then
+    PHP_BIN="/usr/bin/php"
+fi
 php() {
     "$PHP_BIN" "$@"
 }
@@ -41,6 +44,57 @@ get_server_ip() {
     local ip
     ip=$(curl -s --connect-timeout 2 -4 ifconfig.me || curl -s --connect-timeout 2 -4 api.ipify.org || echo "127.0.0.1")
     echo "$ip"
+}
+
+cmd_set_mysql_root_pass() {
+    local new_pass="${1:-}"
+    if [ -z "$new_pass" ]; then
+        echo -e "${RED}[ERROR] Format: mypanel mysql-pass <password_baru>${NC}"
+        return 1
+    fi
+
+    echo -e "${BLUE}[*] Mensinkronkan password root MySQL ke: ${new_pass}...${NC}"
+    if bash "${PANEL_ROOT}/plugins/mysql/install.sh" set_root_pass "$new_pass"; then
+        echo -e "${GREEN}[✔] Password root MySQL di database server & Almusa Panel BERHASIL disinkronkan ke: ${new_pass}${NC}"
+    else
+        echo -e "${RED}[ERROR] Gagal menyinkronkan password root MySQL. Pastikan layanan MariaDB/MySQL aktif.${NC}"
+        return 1
+    fi
+}
+
+cmd_database_info() {
+    show_banner
+    echo -e "${CYAN}${BOLD}=== INFORMASI DATABASE & KREDENSIAL ALMUSA PANEL ===${NC}"
+    php -r '
+    require_once "'"${PANEL_ROOT}"'/app/bootstrap.php";
+    $rootPass = \App\Core\Database::getSetting("mysql_root_pass", "");
+    echo "MySQL Host      : 127.0.0.1 / localhost" . PHP_EOL;
+    echo "MySQL Port      : 3306" . PHP_EOL;
+    echo "MySQL Root User : root" . PHP_EOL;
+    echo "MySQL Root Pass : " . ($rootPass !== "" ? $rootPass : "(Belum diset / belum terpasang)") . PHP_EOL;
+    echo "" . PHP_EOL;
+
+    $pdo = \App\Core\Database::getInstance();
+    $dbs = $pdo->query("SELECT db_name, db_user, db_password_enc, db_port, access_host FROM databases ORDER BY id DESC")->fetchAll();
+    if (empty($dbs)) {
+        echo "Belum ada database website yang tercatat di panel." . PHP_EOL;
+    } else {
+        echo "Daftar Database Website:" . PHP_EOL;
+        echo str_repeat("-", 75) . PHP_EOL;
+        echo sprintf("%-20s | %-18s | %-18s | %s", "Database", "User", "Password", "Host:Port") . PHP_EOL;
+        echo str_repeat("-", 75) . PHP_EOL;
+        foreach ($dbs as $row) {
+            $enc = (string)($row["db_password_enc"] ?? "");
+            if (\App\Core\Crypto::isEncrypted($enc)) {
+                $pass = (string)\App\Core\Crypto::decrypt($enc);
+            } else {
+                $pass = base64_decode($enc, true) ?: $enc;
+            }
+            echo sprintf("%-20s | %-18s | %-18s | %s:%s", $row["db_name"], $row["db_user"], $pass, $row["access_host"], $row["db_port"]) . PHP_EOL;
+        }
+        echo str_repeat("-", 75) . PHP_EOL;
+    }
+    '
 }
 
 cmd_default() {
@@ -218,7 +272,8 @@ interactive_menu() {
         echo " 7) Ganti Port Panel"
         echo " 8) Ganti Secret Entrance Path"
         echo " 9) Update Almusa Panel ke Versi Terbaru"
-        echo " 10) Uninstall Almusa Panel"
+        echo " 10) Tampilkan User & Password Database (MySQL)"
+        echo " 11) Uninstall Almusa Panel"
         echo " 0) Keluar"
         echo ""
         read -r -p "Pilihan Anda: " choice
@@ -233,7 +288,8 @@ interactive_menu() {
             7) cmd_change_port ;;
             8) cmd_change_entrance ;;
             9) cmd_update ;;
-            10) cmd_uninstall && exit 0 ;;
+            10) cmd_database_info ;;
+            11) cmd_uninstall && exit 0 ;;
             0) exit 0 ;;
             *) echo -e "${RED}[!] Pilihan tidak valid.${NC}" ;;
         esac
@@ -354,6 +410,13 @@ case "${1:-}" in
         ;;
     default)
         cmd_default
+        ;;
+    db|database|mysql)
+        cmd_database_info
+        ;;
+    mysql-pass)
+        shift
+        cmd_set_mysql_root_pass "$@"
         ;;
     update)
         cmd_update

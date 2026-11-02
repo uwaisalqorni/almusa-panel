@@ -297,6 +297,13 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             if (!file_exists($script)) return null;
             return "bash " . escapeshellarg($script) . " stop " . escapeshellarg((string)$siteId) . " " . escapeshellarg((string)$pid);
 
+        case 'mysql_root_pass':
+            $newPass = (string)($payload['password'] ?? '');
+            if (empty($newPass)) return null;
+            $script = "{$root}/plugins/mysql/install.sh";
+            if (!file_exists($script)) return null;
+            return "bash " . escapeshellarg($script) . " set_root_pass " . escapeshellarg($newPass);
+
         case 'service_reload':
             $service = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', (string)($payload['service'] ?? ''));
             if (!in_array($service, ['nginx', 'mysql', 'mariadb', 'cloudflared']) && !str_starts_with($service, 'php')) {
