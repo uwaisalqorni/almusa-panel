@@ -181,7 +181,13 @@ chmod 755 /run/php
 for fpm_svc in $(systemctl list-units --type=service --state=running 2>/dev/null | grep -oE "php[0-9.]+-fpm\.service" | sort -u); do
     systemctl restart "$fpm_svc" 2>/dev/null || true
 done
-systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php-fpm 2>/dev/null || true
+ACTIVE_PHP_BIN=$(command -v php || find /usr/bin -maxdepth 1 \( -type f -o -type l \) -name "php[0-9]*" 2>/dev/null | sort -V | tail -n 1 || true)
+if [ -n "$ACTIVE_PHP_BIN" ] && [ -x "$ACTIVE_PHP_BIN" ]; then
+    ACTIVE_VER=$($ACTIVE_PHP_BIN -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;' 2>/dev/null || echo "")
+    if [ -n "$ACTIVE_VER" ]; then
+        systemctl restart "php${ACTIVE_VER}-fpm" 2>/dev/null || true
+    fi
+fi
 
 # 7. Clean up Nginx Configurations
 echo -e "${BLUE}[3/7] Membersihkan konfigurasi Nginx Almusa Panel...${NC}"

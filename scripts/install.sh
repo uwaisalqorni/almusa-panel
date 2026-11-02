@@ -166,8 +166,8 @@ echo -e "${BLUE}[2/7] Menginstal dependensi inti engine panel (Git, Curl, SQLite
 PANEL_PHP_VER="8.3"
 
 if [ "$DRY_RUN" = true ]; then
-    PHP_FPM_BIN=$(command -v php-fpm8.3 || command -v php-fpm || echo "/usr/sbin/php-fpm8.3")
-    PHP_CLI_BIN=$(command -v php8.3 || command -v php || echo "/usr/bin/php8.3")
+    PHP_CLI_BIN=$(command -v php || find /usr/bin -maxdepth 1 \( -type f -o -type l \) -name "php[0-9]*" 2>/dev/null | sort -V | tail -n 1 || echo "/usr/bin/php")
+    PHP_FPM_BIN=$(find /usr/sbin -maxdepth 1 \( -type f -o -type l \) -name "php-fpm[0-9]*" 2>/dev/null | sort -V | tail -n 1 || command -v php-fpm || echo "/usr/sbin/php-fpm")
     echo -e "${GREEN}[✔] [SIMULASI] Runtime PHP-CLI : ${PHP_CLI_BIN}${NC}"
     echo -e "${GREEN}[✔] [SIMULASI] Runtime PHP-FPM : ${PHP_FPM_BIN}${NC}"
 else
@@ -196,35 +196,57 @@ else
         CODENAME="$(lsb_release -sc 2>/dev/null || echo 'noble')"
     fi
 
+    USE_ONDREJ_PPA=false
     if [ "$OS" = "ubuntu" ]; then
         rm -f /etc/apt/sources.list.d/php.list
-        add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+        echo -e "${BLUE}[*] Memeriksa ketersediaan PPA ondrej/php untuk Ubuntu '${CODENAME}'...${NC}"
+        if curl -fsSLI "https://ppa.launchpadcontent.net/ondrej/php/ubuntu/dists/${CODENAME}/Release" >/dev/null 2>&1; then
+            echo -e "${GREEN}[✔] PPA ondrej/php mendukung '${CODENAME}'. Mendaftarkan PPA...${NC}"
+            add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+            USE_ONDREJ_PPA=true
+        else
+            echo -e "${YELLOW}[!] PPA ondrej/php belum memiliki build rilis untuk Ubuntu '${CODENAME}'.${NC}"
+            echo -e "${BLUE}[*] Menggunakan paket runtime PHP resmi bawaan distro Ubuntu ${CODENAME}...${NC}"
+            rm -f /etc/apt/sources.list.d/*ondrej* 2>/dev/null || true
+        fi
     else
         mkdir -p /usr/share/keyrings
         if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
             curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg || true
         fi
         echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ ${CODENAME} main" > /etc/apt/sources.list.d/php.list
+        USE_ONDREJ_PPA=true
     fi
     apt-get update -y || true
 
-    echo -e "${BLUE}[*] Memasang runtime engine inti panel: PHP ${PANEL_PHP_VER} LTS...${NC}"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        php${PANEL_PHP_VER}-fpm \
-        php${PANEL_PHP_VER}-cli \
-        php${PANEL_PHP_VER}-sqlite3 \
-        php${PANEL_PHP_VER}-mysql \
-        php${PANEL_PHP_VER}-curl \
-        php${PANEL_PHP_VER}-mbstring \
-        php${PANEL_PHP_VER}-xml \
-        php${PANEL_PHP_VER}-zip || \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        php-fpm php-cli php-sqlite3 php-mysql php-curl php-mbstring php-xml php-zip || true
+    echo -e "${BLUE}[*] Memasang runtime engine inti panel...${NC}"
+    INSTALL_SUCCESS=false
+    if [ "$USE_ONDREJ_PPA" = true ] && apt-cache show "php${PANEL_PHP_VER}-fpm" >/dev/null 2>&1; then
+        echo -e "${BLUE}[*] Memasang PHP ${PANEL_PHP_VER} LTS...${NC}"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            php${PANEL_PHP_VER}-fpm \
+            php${PANEL_PHP_VER}-cli \
+            php${PANEL_PHP_VER}-sqlite3 \
+            php${PANEL_PHP_VER}-mysql \
+            php${PANEL_PHP_VER}-curl \
+            php${PANEL_PHP_VER}-mbstring \
+            php${PANEL_PHP_VER}-xml \
+            php${PANEL_PHP_VER}-zip && INSTALL_SUCCESS=true
+    fi
 
-    PHP_FPM_BIN=$(command -v php-fpm8.3 || command -v php-fpm || echo "/usr/sbin/php-fpm8.3")
-    PHP_CLI_BIN=$(command -v php8.3 || command -v php || echo "/usr/bin/php8.3")
-    echo -e "${BLUE}[*] Menggunakan PHP-FPM binary: ${PHP_FPM_BIN}${NC}"
-    echo -e "${BLUE}[*] Menggunakan PHP CLI binary : ${PHP_CLI_BIN}${NC}"
+    if [ "$INSTALL_SUCCESS" != true ]; then
+        echo -e "${BLUE}[*] Memasang paket PHP bawaan repositori resmi sistem operasi...${NC}"
+        DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            php-fpm php-cli php-sqlite3 php-mysql php-curl php-mbstring php-xml php-zip || true
+    fi
+
+    PHP_CLI_BIN=$(command -v php || find /usr/bin -maxdepth 1 \( -type f -o -type l \) -name "php[0-9]*" 2>/dev/null | sort -V | tail -n 1 || echo "/usr/bin/php")
+    PHP_FPM_BIN=$(find /usr/sbin -maxdepth 1 \( -type f -o -type l \) -name "php-fpm[0-9]*" 2>/dev/null | sort -V | tail -n 1)
+    if [ -z "$PHP_FPM_BIN" ]; then
+        PHP_FPM_BIN=$(command -v php-fpm || echo "/usr/sbin/php-fpm")
+    fi
+    echo -e "${GREEN}[✔] Terdeteksi PHP-FPM binary: ${PHP_FPM_BIN}${NC}"
+    echo -e "${GREEN}[✔] Terdeteksi PHP CLI binary : ${PHP_CLI_BIN}${NC}"
 fi
 
 # 6. Setup Isolated Directory Structure under /www
@@ -638,8 +660,15 @@ mkdir -p /run/php
 chown www-data:www-data /run/php
 chmod 755 /run/php
 chmod 660 /run/php/*.sock 2>/dev/null || true
-if ! systemctl is-active --quiet php8.3-fpm 2>/dev/null; then
-    systemctl restart php8.3-fpm 2>/dev/null || true
+ACTIVE_PHP_VER=$(${PHP_CLI_BIN:-php} -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;' 2>/dev/null || echo "")
+if [ -n "$ACTIVE_PHP_VER" ] && systemctl list-unit-files "php${ACTIVE_PHP_VER}-fpm.service" >/dev/null 2>&1; then
+    if ! systemctl is-active --quiet "php${ACTIVE_PHP_VER}-fpm" 2>/dev/null; then
+        systemctl restart "php${ACTIVE_PHP_VER}-fpm" 2>/dev/null || true
+    fi
+elif systemctl list-unit-files "php8.3-fpm.service" >/dev/null 2>&1; then
+    if ! systemctl is-active --quiet php8.3-fpm 2>/dev/null; then
+        systemctl restart php8.3-fpm 2>/dev/null || true
+    fi
 fi
 
 # Verifikasi sintaks Nginx dan muat ulang dengan mekanisme pemulihan

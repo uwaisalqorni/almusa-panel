@@ -39,7 +39,23 @@ ensure_php_repo() {
 
     if [ "$DISTRO_ID" = "ubuntu" ]; then
         rm -f /etc/apt/sources.list.d/php.list
-        add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+        if curl -fsSLI "https://ppa.launchpadcontent.net/ondrej/php/ubuntu/dists/${CODENAME}/Release" >/dev/null 2>&1; then
+            add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+        else
+            echo "[INFO] PPA ondrej/php belum rilis untuk '${CODENAME}'. Menggunakan fallback upstream LTS 'noble'..."
+            rm -f "/etc/apt/sources.list.d/*ondrej*${CODENAME}*" 2>/dev/null || true
+            mkdir -p /usr/share/keyrings
+            if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
+                curl -sSL https://packages.sury.org/php/apt.gpg -o /usr/share/keyrings/debsuryorg-archive-keyring.gpg 2>/dev/null || true
+            fi
+            cat << 'EOF' > /etc/apt/sources.list.d/ondrej-ubuntu-php-fallback.sources
+Types: deb
+URIs: https://ppa.launchpadcontent.net/ondrej/php/ubuntu/
+Suites: noble
+Components: main
+Signed-By: /usr/share/keyrings/debsuryorg-archive-keyring.gpg
+EOF
+        fi
     else
         mkdir -p /usr/share/keyrings
         if [ ! -s /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then

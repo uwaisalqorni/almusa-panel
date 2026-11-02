@@ -17,8 +17,11 @@ while [ -h "$SOURCE" ]; do
 done
 PANEL_ROOT="$( cd -P "$( dirname "$SOURCE" )/.." >/dev/null 2>&1 && pwd )"
 
-# Resolve dedicated Panel PHP binary (prefer php8.3)
-PHP_BIN=$(command -v php8.3 || command -v php || echo "/usr/bin/php")
+# Resolve dedicated Panel PHP binary dynamically
+PHP_BIN=$(command -v php || find /usr/bin -maxdepth 1 \( -type f -o -type l \) -name "php[0-9]*" 2>/dev/null | sort -V | tail -n 1 || echo "/usr/bin/php")
+if [ -z "$PHP_BIN" ] || [ ! -x "$PHP_BIN" ]; then
+    PHP_BIN="/usr/bin/php"
+fi
 php() {
     "$PHP_BIN" "$@"
 }
