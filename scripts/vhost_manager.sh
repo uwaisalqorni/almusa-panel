@@ -21,8 +21,25 @@ PHP_VER="${4:-8.3}"
 REWRITE="${5:-default}"
 
 # Strict domain sanitization
-if [ -z "$DOMAIN" ] || ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+if [ "$ACTION" != "fix_permissions" ] && { [ -z "$DOMAIN" ] || ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; }; then
     echo "[ERROR] Invalid domain name: '$DOMAIN'"
+    exit 1
+fi
+
+# Kanonikalisasi path & pastikan berada di bawah /www/wwwroot/ (anti path traversal / symlink).
+# Pola `case /www/wwwroot/*` saja TIDAK cukup: cocok dengan /www/wwwroot/../../etc.
+canonical_wwwroot() {
+    local resolved
+    resolved="$(realpath -m -- "$1" 2>/dev/null)" || return 1
+    case "$resolved" in
+        /www/wwwroot/?*) printf '%s' "$resolved" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Tolak segmen '..' pada docroot yang diberikan caller
+if [[ "$DOCROOT" =~ (^|/)\.\.(/|$) ]]; then
+    echo "[ERROR] Path traversal terdeteksi pada docroot: '$DOCROOT'"
     exit 1
 fi
 
@@ -135,18 +152,12 @@ EOF
         rm -f "$LINK_FILE" "$CONF_FILE"
 
         if [ "$DELETE_FILES" = "1" ] && [ -n "$DOCROOT" ] && [ -d "$DOCROOT" ]; then
-            case "$DOCROOT" in
-                /|/root|/home|/www|/www/wwwroot|/etc|/var|/usr|/bin|/sbin)
-                    echo "[WARNING] Refusing to delete protected system path: $DOCROOT"
-                    ;;
-                /www/wwwroot/*)
-                    echo "[INFO] Removing website directory: $DOCROOT..."
-                    rm -rf "$DOCROOT"
-                    ;;
-                *)
-                    echo "[WARNING] Docroot outside /www/wwwroot, not deleted for safety: $DOCROOT"
-                    ;;
-            esac
+            if SAFE_DOCROOT="$(canonical_wwwroot "$DOCROOT")" && [ -d "$SAFE_DOCROOT" ]; then
+                echo "[INFO] Removing website directory: $SAFE_DOCROOT..."
+                rm -rf -- "$SAFE_DOCROOT"
+            else
+                echo "[WARNING] Docroot outside /www/wwwroot (setelah kanonikalisasi), not deleted for safety: $DOCROOT"
+            fi
         fi
 
         # Remove logs
@@ -204,18 +215,14 @@ EOF
             echo "[ERROR] Path '$TARGET_PATH' does not exist."
             exit 1
         fi
-        case "$TARGET_PATH" in
-            /www/wwwroot/*)
-                chown -R www-data:www-data "$TARGET_PATH" 2>/dev/null || true
-                find "$TARGET_PATH" -type d -exec chmod 0755 {} + 2>/dev/null || true
-                find "$TARGET_PATH" -type f -exec chmod 0644 {} + 2>/dev/null || true
-                echo "[SUCCESS] Permissions set: directories 0755, files 0644, user www-data:www-data."
-                ;;
-            *)
-                echo "[ERROR] Refusing to modify permissions outside /www/wwwroot"
-                exit 1
-                ;;
-        esac
+        if ! SAFE_TARGET="$(canonical_wwwroot "$TARGET_PATH")"; then
+            echo "[ERROR] Refusing to modify permissions outside /www/wwwroot"
+            exit 1
+        fi
+        chown -R www-data:www-data -- "$SAFE_TARGET" 2>/dev/null || true
+        find "$SAFE_TARGET" -type d -exec chmod 0755 {} + 2>/dev/null || true
+        find "$SAFE_TARGET" -type f -exec chmod 0644 {} + 2>/dev/null || true
+        echo "[SUCCESS] Permissions set: directories 0755, files 0644, user www-data:www-data."
         ;;
 
     clear_log)

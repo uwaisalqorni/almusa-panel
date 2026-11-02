@@ -86,15 +86,7 @@ class Auth
             $_SESSION['panel_user_id'] = (int)$user['id'];
             $_SESSION['entrance_verified'] = true;
 
-            $ip = $_SERVER['HTTP_CF_CONNECTING_IP']
-                ?? $_SERVER['HTTP_X_FORWARDED_FOR']
-                ?? $_SERVER['REMOTE_ADDR']
-                ?? '127.0.0.1';
-
-            if (strpos($ip, ',') !== false) {
-                $parts = explode(',', $ip);
-                $ip = trim($parts[0]);
-            }
+            $ip = RateLimiter::clientIp();
 
             $update = $pdo->prepare("UPDATE users SET last_login_ip = :ip, last_login_at = CURRENT_TIMESTAMP WHERE id = :id");
             $update->execute([':ip' => $ip, ':id' => $user['id']]);

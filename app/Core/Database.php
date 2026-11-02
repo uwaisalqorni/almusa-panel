@@ -33,7 +33,7 @@ class Database
         return (get_current_user() === 'root' || getenv('USER') === 'root');
     }
 
-    public static function fixPermissions(string $path, int $mode = 0664): void
+    public static function fixPermissions(string $path, int $mode = 0660): void
     {
         if (file_exists($path)) {
             @chmod($path, $mode);
@@ -56,7 +56,7 @@ class Database
                 @mkdir($dir, 0775, true);
             }
             if (is_dir($dir)) {
-                @chmod($dir, 02775);
+                @chmod($dir, 02770);
                 if (self::isRoot()) {
                     @chown($dir, 'www-data');
                     @chgrp($dir, 'www-data');
@@ -76,12 +76,12 @@ class Database
                 self::$instance->exec('PRAGMA foreign_keys = ON;');
                 self::$instance->exec('PRAGMA busy_timeout = 5000;');
 
-                self::fixPermissions(self::$dbFile, 0664);
+                self::fixPermissions(self::$dbFile, 0660);
                 if (file_exists(self::$dbFile . '-wal')) {
-                    self::fixPermissions(self::$dbFile . '-wal', 0664);
+                    self::fixPermissions(self::$dbFile . '-wal', 0660);
                 }
                 if (file_exists(self::$dbFile . '-shm')) {
-                    self::fixPermissions(self::$dbFile . '-shm', 0664);
+                    self::fixPermissions(self::$dbFile . '-shm', 0660);
                 }
             } catch (PDOException $e) {
                 error_log("Database connection error: " . $e->getMessage());

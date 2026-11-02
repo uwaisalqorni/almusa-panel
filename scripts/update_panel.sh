@@ -108,7 +108,7 @@ if [ -d "${PANEL_ROOT}/.git" ] && git rev-parse --is-inside-work-tree >/dev/null
         if [ ! -f "$DB_FILE" ] || [ ! -s "$DB_FILE" ]; then
             echo -e "${YELLOW}[!] Mendeteksi file database terhapus/kosong pasca-reset. Memulihkan dari backup...${NC}"
             cp -p "$DB_BACKUP_FILE" "$DB_FILE"
-            chmod 664 "$DB_FILE"
+            chmod 660 "$DB_FILE"
             chown www-data:www-data "$DB_FILE" 2>/dev/null || true
         fi
     fi
@@ -128,8 +128,8 @@ find "${PANEL_ROOT}/plugins" -type f -name "*.sh" -exec chmod +x {} + 2>/dev/nul
 
 if [ -d "${PANEL_ROOT}/data" ]; then
     chown -R www-data:www-data "${PANEL_ROOT}/data" 2>/dev/null || true
-    chmod 2775 "${PANEL_ROOT}/data" 2>/dev/null || true
-    chmod 664 "${PANEL_ROOT}/data"/* 2>/dev/null || true
+    chmod 2770 "${PANEL_ROOT}/data" 2>/dev/null || true
+    find "${PANEL_ROOT}/data" -maxdepth 1 -type f -exec chmod 660 {} + 2>/dev/null || true
 fi
 echo -e "${GREEN}[✔] Izin berkas berhasil diperbarui.${NC}"
 

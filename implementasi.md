@@ -2,6 +2,9 @@
 > **Dokumen Arsitektur, Standar Keamanan, Optimasi Performa, dan Roadmap Menuju Versi Produksi Siap Pakai (Production-Ready Release)**  
 > Versi Dokumen: 2.0.0 · Tanggal Rilis: 30 Oktober 2026 · Target Rilis: v1.1.0 – v2.0.0
 
+> **Status implementasi (audit kode 2 Nov 2026):** ✅ selesai · 🟡 sebagian · ❌ belum.  
+> Detail temuan keamanan & prioritas: lihat laporan analisa. Urutan kerja: perbaiki dulu jalur root/hak akses (pemisahan user panel vs website), bypass rate limiter, Adminer, validasi path, dan enkripsi rahasia — baru 2FA & audit log.
+
 ---
 
 ## 📋 Daftar Isi
@@ -45,29 +48,33 @@ flowchart TD
     Audit --> Core["Controller & Task Daemon (Escaped Shell Only)"]
 ```
 
-### 2.1. Brute-Force Shield & Sliding-Window Rate Limiting
+### 2.1. Brute-Force Shield & Sliding-Window Rate Limiting `🟡 SEBAGIAN`
+> ✅ `RateLimiter` aktif di login. Catatan: IP klien kini hanya dari `REMOTE_ADDR` (header `X-Forwarded-For` tidak lagi dipercaya). Belum ada limit per-username dan `limit_req` Nginx untuk seluruh endpoint.
 - **Mekanisme:** Batasi percobaan login maksimal 5 kali dalam rentang waktu 15 menit per IP address.
 - **Implementasi:** Tabel SQLite `login_attempts` (`ip_address`, `attempt_count`, `locked_until`, `last_attempt`).
 - **Respon:** Jika melebihi batas, kembalikan HTTP 429 Too Many Requests dengan pesan hitung mundur lockout.
 
-### 2.2. Two-Factor Authentication (2FA / TOTP RFC 6238)
+### 2.2. Two-Factor Authentication (2FA / TOTP RFC 6238) `❌ BELUM`
 - Menyediakan autentikasi dua faktor berbasis waktu (Google Authenticator, Microsoft Authenticator, Authy, Aegis).
 - Menggunakan library murni PHP tanpa dependensi Composer berat (hanya enkripsi HMAC-SHA1 bawaan PHP).
 - Menyediakan 8 recovery codes sekali pakai saat pertama kali 2FA diaktifkan.
 
-### 2.3. Session Hardening & Anti-Session Hijacking
+### 2.3. Session Hardening & Anti-Session Hijacking `🟡 SEBAGIAN`
+> ✅ Cookie `HttpOnly` + `SameSite=Strict` + `Secure` (bila HTTPS). ❌ Session fingerprint. ❌ Auto-logout 30 menit (saat ini cookie 7 hari tanpa idle timeout).
 - **Cookie Security:** Wajib menggunakan flag `HttpOnly`, `SameSite=Strict`, dan `Secure` (jika HTTPS aktif).
 - **Session Fingerprinting:** Ikat ID sesi dengan kombinasi hash `User-Agent` + Blok IP Subnet (`/24`). Jika pengguna mengakses dari jaringan atau browser yang berbeda secara tiba-tiba, sesi otomatis diakhiri (revoke).
 - **Auto-Logout Inactivity:** Timeout otomatis setelah 30 menit tidak ada interaksi pengguna di UI.
 
-### 2.4. Audit Logging Terpusat
+### 2.4. Audit Logging Terpusat `❌ BELUM`
+> Hanya ada `data/panel_security.log` untuk event login. Tabel `audit_logs` belum ada.
 Setiap operasi sensitif harus tercatat secara permanen dan tidak dapat dihapus melalui antarmuka web:
 - Penambahan/Penghapusan Website & Database
 - Reset Password & Penggantian Secret Entrance
 - Eksekusi Task CLI & Patch Keamanan
 - Informasi yang dicatat: `timestamp`, `user_id`, `action`, `target`, `ip_address`, `user_agent`, `status_code`.
 
-### 2.5. Disposable Token untuk Database Adminer
+### 2.5. Disposable Token untuk Database Adminer `🟡 SEBAGIAN`
+> ✅ SSO token sekali pakai (120 detik) di `DatabaseController::ssoToken`. Akses langsung `adminer-core.php` kini diblokir di Nginx dan fallback auto-login root dihapus (wajib token SSO).
 - Berkas `adminer-core.php` tidak boleh diakses publik secara bebas.
 - Saat pengguna mengklik *"Buka Adminer"*, panel menghasilkan token sekali pakai yang berlaku selama 5 menit:
   `http://<IP>:<PORT>/adminer/?token=a8f9c1...`
@@ -79,7 +86,8 @@ Setiap operasi sensitif harus tercatat secara permanen dan tidak dapat dihapus m
 
 Panel harus terasa instan (*snappy*), bahkan saat dibuka dari koneksi internet seluler atau dijalankan di VPS spek rendah (1 vCPU, 1 GB RAM).
 
-### 3.1. Parsing Langsung Virtual Filesystem Linux (`/proc/*`)
+### 3.1. Parsing Langsung Virtual Filesystem Linux (`/proc/*`) `✅ SELESAI`
+> Diimplementasikan di `SystemMonitor` (commit `6ee7831`). Angka benchmark ~8ms belum didukung skrip pengukur.
 - **Masalah Saat Ini:** Pembacaan CPU, RAM, Disk, dan Traffic IO melalui eksekusi sub-shell shell (`free -m`, `mpstat`, `vmstat`, `netstat`) membebani CPU karena fork process berulang setiap 2 detik.
 - **Solusi Produksi:** Baca langsung berkas memori virtual kernel Linux menggunakan `file_get_contents()`:
   - RAM: Baca `/proc/meminfo` (hitung `MemTotal`, `MemAvailable`, `Cached`, `Buffers`).
@@ -88,13 +96,15 @@ Panel harus terasa instan (*snappy*), bahkan saat dibuka dari koneksi internet s
   - Network Traffic: Baca `/proc/net/dev`.
 - **Hasil Benchmark:** Response time API monitoring berkurang dari ~85ms menjadi **~8ms** (90% lebih efisien!).
 
-### 3.2. Server-Sent Events (SSE) untuk Task Streaming Log
+### 3.2. Server-Sent Events (SSE) untuk Task Streaming Log `❌ BELUM`
+> Masih polling 2 detik. Alternatif lebih ringan: polling dengan offset byte. Jika SSE: wajib cek auth dan `session_write_close()`.
 - Gantikan polling AJAX berkala (`setInterval` fetch `/api/tasks`) dengan koneksi persisten SSE:
   `GET /api/tasks/stream?task_id=123`
 - Backend mengalirkan (*stream*) baris log baru dari berkas `/www/panel/data/panelExec.log` secara *real-time*.
 - Terminal output di dashboard langsung bergerak turun (*auto-scroll*) seketika baris log dicetak oleh bash.
 
-### 3.3. Optimasi Cache Statis & Aset Nginx
+### 3.3. Optimasi Cache Statis & Aset Nginx `🟡 SEBAGIAN`
+> ✅ Gzip, `expires 30d`. ❌ Brotli, ❌ `immutable`.
 Pada [config/nginx-panel.conf](file:///home/afandi/almusa-panel/config/nginx-panel.conf):
 - Aktifkan Gzip/Brotli compression untuk JSON, SVG, CSS, dan JS.
 - Berikan header `Cache-Control: public, max-age=2592000, immutable` untuk berkas statis ikon, font, dan stylesheet.
@@ -103,13 +113,15 @@ Pada [config/nginx-panel.conf](file:///home/afandi/almusa-panel/config/nginx-pan
 
 ## 4. Pilar 3: Portabilitas & Kemudahan Deployment Multi-Server
 
-### 4.1. Idempotent & Self-Healing Installer
-Installer [scripts/install.sh](file:///home/afandi/almusa-panel/scripts/install.sh) harus aman dijalankan berulang kali (*idempotent*) tanpa merusak konfigurasi atau database yang sudah ada:
-- **Deteksi Instalasi Sebelumnya:** Jika `/www/panel/data/panel.db` sudah ada, jangan timpa database atau buat kredensial baru; jalankan saja `autoMigrate()` untuk update skema.
-- **Deteksi Konflik Port:** Sebelum bind port `64448`, periksa dengan `ss -tuln` atau `lsof`. Jika terbentur aplikasi lain, berikan notifikasi atau alihkan port secara cerdas.
-- **Pembersihan Bersih (Clean Uninstaller):** Sediakan script `scripts/uninstall.sh` resmi untuk membersihkan panel jika pengguna ingin meng-uninstall sepenuhnya.
+### 4.1. Idempotent & Self-Healing Installer `[SELESAI / COMPLETED]`
+Installer [scripts/install.sh](file:///home/afandi/almusa-panel/scripts/install.sh) telah direfaktor dengan arsitektur tangguh yang aman dijalankan berulang kali (*idempotent*):
+- **Deteksi Instalasi Sebelumnya:** Jika `/www/panel/data/panel.db` sudah ada, direktori `data/` diproteksi secara otomatis dari penimpaan file kosong, snapshot SQLite WAL-safe dicadangkan ke `/www/backup/`, dan skema diperbarui via `Database::autoMigrate()` tanpa menyentuh password admin atau kredensial yang ada.
+- **Deteksi Konflik Port Cerdas (Self-Healing):** Sebelum bind port, sistem memeriksa status port via `ss -tuln`, `lsof`, dan `fuser`. Jika port sedang digunakan oleh aplikasi lain (bukan milik Nginx Almusa), installer memberikan peringatan dan secara cerdas mengalihkan listen port ke port aman berikutnya (range 64449..65000), serta memperbarui Nginx, database, dan UFW secara otomatis.
+- **Pembersihan Bersih (Clean Uninstaller):** Skrip resmi [scripts/uninstall.sh](file:///home/afandi/almusa-panel/scripts/uninstall.sh) dan perintah `mypanel uninstall` telah disediakan untuk membersihkan panel secara total (mengarsipkan snapshot darurat ke `/root/`, menghapus service systemd, konfigurasi Nginx, rule UFW, cron job sistem, sudoers, dan symlink global) tanpa mengganggu website di `/www/wwwroot` maupun database MySQL.
+- **Otomasi Multi-Server:** Mendukung opsi CLI `-p/--port <PORT>`, `-e/--entrance <PATH>`, `-y/--yes` (non-interaktif), dan `--force` untuk kemudahan deployment massal via script automation / cloud-init.
 
-### 4.2. Skrip Pemulihan Bencana CLI (Disaster Recovery Mode)
+### 4.2. Skrip Pemulihan Bencana CLI (Disaster Recovery Mode) `❌ BELUM`
+> `mypanel doctor` dan `mypanel repair` belum ada. `mypanel backup` tersedia sebagai pengganti sebagian `backup-now`.
 Jika web interface tidak dapat diakses (misal Nginx korup akibat salah edit), sediakan perintah CLI darurat:
 ```bash
 mypanel doctor       # Mendiagnosa socket, port, permission, dan status DB secara otomatis
@@ -121,21 +133,23 @@ mypanel backup-now   # Dump instan SQLite panel dan seluruh MariaDB ke /www/back
 
 ## 5. Pilar 4: Fitur Unggulan Produksi (Production-Grade Features)
 
-### 5.1. Automated Remote Cloud Backup (S3 / R2 / Google Drive)
+### 5.1. Automated Remote Cloud Backup (S3 / R2 / Google Drive) `🟡 SEBAGIAN`
+> ✅ S3Client, BackupEngine, cron backup. ❌ Retensi 7/4/2 (saat ini berbasis hari), ❌ SFTP, ❌ enkripsi secret key.
 - Cadangkan database MySQL dan arsip file website secara terjadwal (Cron).
 - Integrasikan dengan protokol standar AWS S3 (Cloudflare R2, AWS S3, Wasabi, MinIO) atau SFTP Remote Server.
 - Otomasi rotasi retensi: simpan 7 backup harian terakhir, 4 backup mingguan, dan 2 backup bulanan.
 
-### 5.2. Database Management Lanjutan
+### 5.2. Database Management Lanjutan `❌ BELUM`
 - **Slow Query Monitor:** Deteksi query MariaDB yang berjalan lambat (> 2 detik).
 - **1-Click Optimize & Repair Table:** Menjalankan `OPTIMIZE TABLE` dan `CHECK TABLE` dari dashboard.
 - **Export/Import SQL GUI:** Fasilitas import file `.sql` atau `.sql.gz` berukuran besar via chunked upload tanpa terhalang `upload_max_filesize`.
 
-### 5.3. 1-Click Staging & Kloning Website
+### 5.3. 1-Click Staging & Kloning Website `❌ BELUM`
 - Fasilitas membuat replika situs produksi ke sub-domain staging (misal: `staging.domain.com`) lengkap dengan duplikasi file dan database.
 - Sinkronisasi instan string URL database untuk CMS populer (WordPress, Laravel `.env`).
 
-### 5.4. Watchdog 2.0 (Proactive Server Healing)
+### 5.4. Watchdog 2.0 (Proactive Server Healing) `🟡 SEBAGIAN`
+> ✅ Auto-restart service, alert disk (ambang 85%). ❌ OOM prevention. Catatan: `drop_caches` otomatis tidak disarankan (menurunkan performa, tidak mencegah OOM).
 - **OOM Prevention:** Jika pemakaian RAM server menyentuh 92%, Watchdog secara otomatis membersihkan buffer cache Linux (`echo 3 > /proc/sys/vm/drop_caches`) dan mendaur ulang worker PHP-FPM yang membengkak (*memory leak*).
 - **Disk Space Exhaustion Alert:** Peringatan dini di dashboard jika kapasitas partisi `/` tersisa kurang dari 10%.
 
@@ -167,7 +181,8 @@ gantt
 
 ## 7. Spesifikasi Teknis Modul & Contoh Implementasi Kode
 
-### 7.1. Skema Basis Data Tambahan (SQLite Migration)
+### 7.1. Skema Basis Data Tambahan (SQLite Migration) `🟡 SEBAGIAN`
+> ✅ `login_attempts` (kolom: `attempts`, `last_attempt_at`, `locked_until`). ❌ `audit_logs`, ❌ kolom 2FA `users`, ❌ `backup_destinations` (konfigurasi cloud memakai tabel `settings`).
 
 Tambahkan tabel berikut ke dalam `autoMigrate()` di [app/Core/Database.php](file:///home/afandi/almusa-panel/app/Core/Database.php):
 
@@ -214,7 +229,8 @@ CREATE TABLE IF NOT EXISTS backup_destinations (
 );
 ```
 
-### 7.2. Implementasi High-Performance Direct `/proc/*` Parser
+### 7.2. Implementasi High-Performance Direct `/proc/*` Parser `✅ SELESAI`
+> Fungsi sudah ada, digabung ke `SystemMonitor` (bukan kelas `HighPerformanceMonitor`).
 
 Tambahkan kelas pembaca memori langsung di [app/Core/SystemMonitor.php](file:///home/afandi/almusa-panel/app/Core/SystemMonitor.php):
 
@@ -272,7 +288,8 @@ class HighPerformanceMonitor
 }
 ```
 
-### 7.3. Implementasi Real-Time Server-Sent Events (SSE) Task Streaming
+### 7.3. Implementasi Real-Time Server-Sent Events (SSE) Task Streaming `❌ BELUM`
+> Peringatan: contoh kode di bawah belum punya cek autentikasi dan akan mengunci sesi PHP selama stream. Perbaiki sebelum dipakai.
 
 Buat endpoint baru pada `app/Controllers/TaskController.php`:
 

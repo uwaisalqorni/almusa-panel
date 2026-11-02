@@ -10,9 +10,9 @@
         <p class="page-desc">Kelola database MySQL / MariaDB, hak akses user, dan backup.</p>
     </div>
     <div class="page-actions">
-        <a href="/adminer" target="_blank" rel="noopener" class="btn btn-secondary">
+        <button type="button" class="btn btn-secondary" onclick="openAdminerSso(0, '', this)">
             <?= ui_icon('database') ?> Web GUI Database (Adminer)
-        </a>
+        </button>
         <button type="button" class="btn btn-primary" onclick="openAddDbModal()">
             <?= ui_icon('plus') ?> Tambah database
         </button>

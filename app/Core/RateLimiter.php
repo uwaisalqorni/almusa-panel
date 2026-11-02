@@ -9,19 +9,16 @@ class RateLimiter
     public const WINDOW_SECONDS = 900;  // 15 menit
 
     /**
-     * Dapatkan IP asli pengunjung (mendukung Cloudflare CF-Connecting-IP & X-Forwarded-For)
+     * Dapatkan IP asli pengunjung.
+     *
+     * Hanya REMOTE_ADDR yang dipercaya. Header CF-Connecting-IP / X-Forwarded-For
+     * dikendalikan klien dan bisa dipalsukan untuk menghindari rate limit.
+     * Nginx (config/cloudflare-realip.conf) sudah mengganti REMOTE_ADDR dengan
+     * IP asli hanya jika request datang dari proxy Cloudflare yang tepercaya.
      */
     public static function clientIp(): string
     {
-        $ip = $_SERVER['HTTP_CF_CONNECTING_IP']
-            ?? $_SERVER['HTTP_X_FORWARDED_FOR']
-            ?? $_SERVER['REMOTE_ADDR']
-            ?? '127.0.0.1';
-
-        if (str_contains($ip, ',')) {
-            $parts = explode(',', $ip);
-            $ip = trim($parts[0]);
-        }
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 
         return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '127.0.0.1';
     }

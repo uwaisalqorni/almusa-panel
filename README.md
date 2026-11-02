@@ -21,7 +21,7 @@
 7. [Sistem Panel Self-Updater (1-Click & CLI)](#-sistem-panel-self-updater)
 8. [Panduan Perintah CLI (`mypanel`)](#-panduan-perintah-cli-mypanel)
 9. [Struktur Direktori Sistem](#-struktur-direktori-sistem)
-10. [Panduan Uninstal](#-panduan-uninstal)
+10. [Panduan Uninstal & Instal Ulang Panel](#-panduan-uninstal--instal-ulang-panel)
 
 ---
 
@@ -79,6 +79,10 @@
 ```bash
 curl -fsSL https://bidanokta.xyz/almusa.sh | sudo bash
 ```
+*Mendukung parameter kustomisasi langsung via satu baris:*
+```bash
+curl -fsSL https://bidanokta.xyz/almusa.sh | sudo bash -s -- --port 64448 -y
+```
 
 #### Opsi B: Instalasi Manual dari Sumber (GitHub)
 Di server VPS atau mesin lokal Anda, clone repositori dan jalankan master installer sebagai `root`:
@@ -88,16 +92,31 @@ cd almusa-panel
 sudo bash scripts/install.sh
 ```
 
-### 2. Apa yang Dilakukan oleh Installer?
-1. Menginstal paket minimal sistem yang dibutuhkan engine: `git`, `curl`, `sqlite3`, `nginx`, serta `php-fpm` & `php-cli` yang sesuai dengan rilis Linux aktif.
-2. Mendaftarkan repositori `ppa:ondrej/php` agar siap memasang multi-versi PHP kapan saja.
-3. Menyiapkan struktur direktori `/www/{panel,server,wwwroot,backup}` dengan standar hak akses aman (`chmod 2775 /www/panel/data` milik grup `www-data`).
-4. Menginisialisasi basis data SQLite, membuat kredensial admin default, dan membuat token secret entrance acak.
-5. Mendaftarkan dan mengaktifkan 2 unit service `systemd`:
-   - `mypanel-web.service`: Web interface panel (Dedicated PHP-FPM) berjalan otomatis saat server *boot* dengan `RuntimeDirectory=php`.
-   - `mypanel-worker.service`: Daemon eksekusi tugas background root.
-6. Membuka port listen panel (`64448`) pada firewall UFW jika firewall aktif.
-7. Membuat symlink global perintah `/usr/local/bin/mypanel` & `/usr/local/bin/almusa`.
+### 2. Opsi Parameter CLI Installer
+Installer [scripts/install.sh](file:///home/afandi/almusa-panel/scripts/install.sh) mendukung berbagai opsi fleksibel untuk kebutuhan automasi multi-server:
+
+```text
+Penggunaan: sudo bash scripts/install.sh [OPSI]
+
+Opsi:
+  -p, --port <PORT>        Kustomisasi port listen panel (contoh: 64448, 8888)
+  -e, --entrance <PATH>    Kustomisasi secret entrance URL path (contoh: mypanel)
+  -y, --yes                Mode non-interaktif (otomatis menyetujui prompt)
+  -f, --force              Paksa re-instalasi dan perbarui seluruh konfigurasi
+  --fresh                  Instalasi baru murni (abaikan cadangan data sebelumnya)
+  --dry-run, --simulate    Simulasi instalasi tanpa melakukan perubahan pada sistem
+  -h, --help               Tampilkan panduan bantuan
+```
+
+> [!TIP]
+> **Mode Simulasi (Dry-Run):** Anda dapat menjalankan `bash scripts/install.sh --dry-run` kapan saja tanpa `sudo` untuk melihat rencana instalasi, deteksi port, dan validasi skema tanpa mengubah berkas sistem atau merestart layanan.
+
+### 3. Arsitektur Idempotent & Self-Healing Installer
+1. **Aman Dijalankan Berulang Kali (Idempotent):** Jika direktori `/www/panel/data/panel.db` sudah ada, installer **tidak akan menimpa basis data** atau mereset password admin lama. Skema tabel otomatis diperbarui via `Database::autoMigrate()`.
+2. **Pencadangan Atomik Pra-Instalasi:** Snapshot database SQLite cadangan otomatis dibuat di `/www/backup/` sebelum kode diperbarui.
+3. **Deteksi Konflik Port Cerdas (Self-Healing Fallback):** Sebelum mengikat port `64448`, installer memeriksa via `ss`, `lsof`, dan `fuser`. Jika port sedang dipakai oleh aplikasi lain (misal Apache, Docker), installer otomatis memberikan notifikasi dan mengalihkan port ke port aman berikutnya (`64449`–`65000`).
+4. **Pemulihan Otomatis Pasca-Uninstall:** Jika panel sebelumnya pernah di-uninstall dan cadangan `/www/backup/last_panel_data.tar.gz` ditemukan, installer otomatis memulihkan database dan kredensial lama Anda.
+5. **Penanganan Kunci Paket (Wait for Apt Lock):** Secara mandiri menunggu proses `unattended-upgrades` OS yang sedang berjalan di background agar instalasi tidak gagal akibat apt lock.
 
 ---
 
@@ -215,7 +234,8 @@ almusa [perintah]
 | `mypanel default` | Menampilkan ringkasan informasi login (URL, entrance path, user, password, port) |
 | `mypanel backup` | Manajemen snapshot cadangan database, situs, dan full server |
 | `mypanel watchdog` | Status dan pengujian daemon pemantau kesehatan server (Watchdog) |
-| `mypanel` *(tanpa argumen)* | Membuka **menu interaktif bernomor 1–9** di terminal |
+| `mypanel uninstall` | Menjalankan uninstaller resmi untuk membersihkan panel dari server |
+| `mypanel` *(tanpa argumen)* | Membuka **menu interaktif bernomor 1–10** di terminal |
 
 ### Menu Interaktif SSH:
 Jika Anda menjalankan perintah `mypanel` tanpa argumen, akan muncul menu interaktif:
@@ -233,6 +253,7 @@ Silakan pilih nomor menu:
  7) Ganti Port Panel
  8) Ganti Secret Entrance Path
  9) Update Almusa Panel ke Versi Terbaru
+ 10) Uninstall Almusa Panel
  0) Keluar
 ```
 
@@ -493,24 +514,115 @@ Semua file panel kontrol terisolasi secara teratur:
 
 ---
 
-## 🗑️ Panduan Uninstal
+## 🗑️ Panduan Uninstal & 🔄 Instal Ulang Panel
 
-Jika Anda ingin mencopot pemasangan Almusa Control Panel dari server:
+Almusa Control Panel dirancang dengan prinsip **Clean Uninstaller** dan **Self-Healing Reinstallation**. Anda dapat mencopot panel atau memasangnya kembali sewaktu-waktu tanpa khawatir merusak situs web yang sedang aktif maupun data basis data MySQL.
 
+---
+
+### A. Panduan Uninstal (Clean Uninstaller)
+
+Untuk mencopot pemasangan Almusa Control Panel dari server:
+
+#### 1. Melalui Menu Interaktif CLI
+Jika perintah `mypanel` masih terpasang, cukup ketik:
+```bash
+mypanel uninstall
+```
+Atau jalankan `mypanel` lalu pilih menu nomor **10) Uninstall Almusa Panel**.
+
+#### 2. Melalui Script Langsung
+Jalankan uninstaller resmi dengan hak akses `root`:
 ```bash
 sudo bash /www/panel/scripts/uninstall.sh
 ```
-Atau tanpa prompt konfirmasi:
+
+#### 3. Opsi Parameter CLI Uninstaller
+Script `scripts/uninstall.sh` mendukung parameter automasi:
+
+```text
+Penggunaan: sudo bash scripts/uninstall.sh [OPSI]
+
+Opsi:
+  -y, --yes                Mode non-interaktif (otomatis konfirmasi pencopotan)
+  --purge                  Hapus permanen seluruh data panel (termasuk arsip /www/backup)
+  --no-backup              Lewati pembuatan arsip cadangan darurat ke /root
+  --dry-run, --simulate    Simulasi uninstal tanpa mengubah sistem (dapat dijalankan non-root)
+  -h, --help               Tampilkan panduan bantuan
+```
+
+*Contoh uninstal cepat non-interaktif:*
 ```bash
 sudo bash /www/panel/scripts/uninstall.sh -y
 ```
 
-**Hal yang dilakukan script uninstaller:**
-1. Menghentikan dan menonaktifkan unit service `mypanel-web` dan `mypanel-worker`.
-2. Menghapus file unit di `/etc/systemd/system/`.
-3. Menghapus symlink perintah `/usr/local/bin/mypanel`.
-4. **Mencadangkan basis data SQLite secara aman** ke `/root/almusa_panel_backup_<tanggal>.tar.gz`.
-5. Menghapus folder `/www/panel`. File proyek website di `/www/wwwroot` dan database MySQL Anda **tetap aman dan tidak terhapus**.
+#### 🛡️ Jaminan Keamanan Data Pengguna Saat Uninstal
+Saat uninstaller dijalankan:
+1. **Website Tetap Berjalan (Zero Website Downtime):** Seluruh file website Anda di `/www/wwwroot` **100% aman dan tidak disentuh**.
+2. **Database MySQL / MariaDB Tetap Utuh:** Layanan MySQL/MariaDB dan seluruh database pengguna tidak dihapus serta tetap aktif melayani aplikasi.
+3. **Nginx Utama & PHP-FPM Pengguna Tetap Aktif:** Uninstaller hanya membersihkan vhost proxy panel (`almusa-panel.conf`). Server Nginx utama tetap melayani website Anda. Seluruh pool PHP-FPM pengguna (`php7.4-fpm` s/d `php8.4-fpm`) dan soket `/run/php` diproteksi secara otomatis agar tidak terjadi error *502 Bad Gateway*.
+4. **Pencadangan Darurat Otomatis:**
+   - Arsip snapshot darurat SQLite dan konfigurasi panel disimpan di:
+     `/root/almusa_panel_backup_<YYYYMMDD_HHMMSS>.tar.gz`
+   - Salinan snapshot pemulihan otomatis disimpan di:
+     `/www/backup/last_panel_data.tar.gz`
+5. **Pembersihan Bersih (Clean Removal):**
+   - Menghentikan dan menghapus unit service systemd (`mypanel-web`, `mypanel-worker`).
+   - Menghapus aturan port firewall UFW panel.
+   - Menghapus cron scheduler panel (`/etc/cron.d/almusa-cron`).
+   - Menghapus hak akses sudoers panel (`/etc/sudoers.d/almusa-panel`).
+   - Menghapus symlink perintah CLI (`/usr/local/bin/mypanel` dan `/usr/local/bin/almusa`).
+   - Menghapus direktori/symlink instalasi di `/www/panel`.
+
+---
+
+### B. Panduan Instal Ulang Panel (Reinstallation)
+
+Jika di masa mendatang Anda ingin memasang kembali Almusa Control Panel di server yang sama, installer memiliki arsitektur cerdas untuk memulihkan seluruh data dan konfigurasi website Anda secara otomatis.
+
+#### Skenario 1: Instal Ulang dengan Pemulihan Data Otomatis (Rekomendasi)
+Cukup jalankan kembali master installer:
+
+```bash
+# Jika dari repositori lokal:
+cd /home/afandi/almusa-panel
+sudo bash scripts/install.sh
+
+# Atau instalasi cepat via curl (di server VPS baru/lain):
+curl -fsSL https://bidanokta.xyz/almusa.sh | sudo bash
+```
+
+**Bagaimana Arsitektur Self-Healing Bekerja?**
+1. Installer otomatis mendeteksi keberadaan snapshot `/www/backup/last_panel_data.tar.gz`.
+2. Database panel (`panel.db`), token akses rahasia (`entrance.txt`), serta kunci enkripsi (`secret.key`) otomatis dipulihkan ke posisi semula.
+3. Seluruh daftar website, domain, konfigurasi PHP, dan database yang pernah Anda daftarkan di panel akan langsung muncul kembali tanpa perlu konfigurasi ulang.
+4. Username & password admin lama Anda tetap berlaku.
+
+#### Skenario 2: Instal Ulang Bersih Murni (`--fresh`)
+Jika Anda sengaja ingin mereset total seluruh database panel dan memulai konfigurasi baru dari awal (tanpa memulihkan data lama):
+
+```bash
+sudo bash scripts/install.sh --fresh
+```
+*Catatan: Opsi ini akan membuat database SQLite baru dan men-generate token entrance serta password admin baru.*
+
+#### Skenario 3: Instal Ulang dengan Kustomisasi Port & Non-Interaktif
+Jika Anda ingin memasang ulang langsung pada port tertentu tanpa konfirmasi interaktif:
+
+```bash
+sudo bash scripts/install.sh --port 8888 -y
+```
+
+#### Skenario 4: Mode Simulasi (Dry-Run)
+Sebelum mengeksekusi instal ulang atau uninstal, Anda dapat melakukan simulasi aman tanpa hak akses `root`:
+
+```bash
+# Simulasi instalasi:
+bash scripts/install.sh --dry-run
+
+# Simulasi uninstal:
+bash scripts/uninstall.sh --dry-run
+```
 
 ---
 

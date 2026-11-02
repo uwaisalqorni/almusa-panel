@@ -127,11 +127,26 @@ while ($running) {
 echo "[" . date('Y-m-d H:i:s') . "] Almusa Task Daemon stopped gracefully.\n";
 
 /**
+ * True jika path mengandung segmen '..' atau byte NUL (path traversal).
+ */
+function hasTraversal(string $path): bool
+{
+    return str_contains($path, "\0") || (bool)preg_match('#(^|/)\.\.(/|$)#', $path);
+}
+
+/**
  * Validates and maps task action to hardened shell commands
  */
 function buildSanitizedCommand(string $action, array $payload): ?string
 {
     $root = PANEL_ROOT;
+
+    // Tolak traversal pada semua field bertipe path sebelum diproses lebih lanjut
+    foreach (['docroot', 'path', 'project_path', 'src_file', 'file', 'cert_file', 'key_file'] as $pathKey) {
+        if (isset($payload[$pathKey]) && is_string($payload[$pathKey]) && hasTraversal($payload[$pathKey])) {
+            return null;
+        }
+    }
 
     switch ($action) {
         case 'plugin_install':

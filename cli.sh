@@ -213,9 +213,10 @@ interactive_menu() {
         echo " 7) Ganti Port Panel"
         echo " 8) Ganti Secret Entrance Path"
         echo " 9) Update Almusa Panel ke Versi Terbaru"
+        echo " 10) Uninstall Almusa Panel"
         echo " 0) Keluar"
         echo ""
-        read -r -p "Pilihan Anda [0-9]: " choice
+        read -r -p "Pilihan Anda: " choice
 
         case "$choice" in
             1) cmd_restart ;;
@@ -227,6 +228,7 @@ interactive_menu() {
             7) cmd_change_port ;;
             8) cmd_change_entrance ;;
             9) cmd_update ;;
+            10) cmd_uninstall && exit 0 ;;
             0) exit 0 ;;
             *) echo -e "${RED}[!] Pilihan tidak valid.${NC}" ;;
         esac
@@ -322,6 +324,15 @@ cmd_update() {
     bash "$update_script"
 }
 
+cmd_uninstall() {
+    local uninstaller="${PANEL_ROOT}/scripts/uninstall.sh"
+    if [ ! -f "$uninstaller" ]; then
+        echo -e "${RED}[ERROR] Skrip uninstaller (${uninstaller}) tidak ditemukan!${NC}"
+        return 1
+    fi
+    bash "$uninstaller" "$@"
+}
+
 # Routing arguments
 case "${1:-}" in
     start)
@@ -341,6 +352,10 @@ case "${1:-}" in
         ;;
     update)
         cmd_update
+        ;;
+    uninstall)
+        shift
+        cmd_uninstall "$@"
         ;;
     backup)
         shift

@@ -73,15 +73,11 @@ if (!empty($_GET['sso'])) {
     }
 }
 
-// 3. Fallback Auto-Authentication for Panel Admins
+// 3. No implicit credentials: Adminer is only reachable through a valid SSO token.
+// (Previously any panel session was silently logged in as MySQL root here.)
 if (empty($_SESSION['adminer_active_auth'])) {
-    $rootPass = Database::getSetting('mysql_root_pass', '');
-    $_SESSION['adminer_active_auth'] = [
-        'server'   => '127.0.0.1',
-        'username' => 'root',
-        'password' => $rootPass,
-        'db'       => '',
-    ];
+    header('Location: /databases');
+    exit;
 }
 
 $activeAuth = $_SESSION['adminer_active_auth'] ?? [];
