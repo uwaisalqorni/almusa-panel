@@ -140,14 +140,19 @@ cmd_reset_password() {
         return 1
     fi
 
-    php -r "
+    ALMUSA_NEW_PASS="$new_pass" php -r "
     require_once '${PANEL_ROOT}/app/bootstrap.php';
     \$pdo = \App\Core\Database::getInstance();
-    \$hash = password_hash('${new_pass}', PASSWORD_BCRYPT, ['cost' => 12]);
-    \$stmt = \$pdo->prepare('UPDATE users SET password_hash = :p WHERE username = :u');
+    \$pass = getenv('ALMUSA_NEW_PASS');
+    \$hash = password_hash(\$pass, PASSWORD_BCRYPT, ['cost' => 12]);
+    \$stmt = \$pdo->prepare('UPDATE users SET password_hash = :p, session_version = session_version + 1 WHERE username = :u');
     \$stmt->execute([':p' => \$hash, ':u' => 'admin']);
-    echo PHP_EOL . '[✔] Password admin berhasil diperbarui!' . PHP_EOL;
+    echo PHP_EOL . '[✔] Password admin berhasil diperbarui! Sesi login di semua perangkat telah diakhiri.' . PHP_EOL;
     "
+
+    if [ -f "${PANEL_ROOT}/data/initial_credentials.txt" ]; then
+        rm -f "${PANEL_ROOT}/data/initial_credentials.txt"
+    fi
 }
 
 cmd_change_port() {

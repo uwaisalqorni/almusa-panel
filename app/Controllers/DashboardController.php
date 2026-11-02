@@ -75,18 +75,19 @@ class DashboardController
             'panel_title'                   => Database::getSetting('panel_title', 'Almusa Server Panel'),
             'entrance_path'                 => Database::getSetting('entrance_path', 'almusa'),
             'panel_port'                    => Database::getSetting('panel_port', '64448'),
-            'cf_api_token'                  => Database::getSetting('cf_api_token', ''),
             'cf_account_id'                 => Database::getSetting('cf_account_id', ''),
             'cf_tunnel_id'                  => Database::getSetting('cf_tunnel_id', ''),
-            'cf_tunnel_token'               => Database::getSetting('cf_tunnel_token', ''),
             'update_repo_url'               => Database::getSetting('update_repo_url', 'https://github.com/uwaisalqorni/almusa-panel'),
-            'mysql_root_pass'               => Database::getSetting('mysql_root_pass', ''),
+            // Flag indikator keberadaan rahasia (agar nilai asli tidak diekspos mentah ke HTML/DOM)
+            'has_cf_api_token'              => !empty(Database::getSetting('cf_api_token', '')),
+            'has_cf_tunnel_token'           => !empty(Database::getSetting('cf_tunnel_token', '')),
+            'has_mysql_root_pass'           => !empty(Database::getSetting('mysql_root_pass', '')),
+            'has_telegram_bot_token'        => !empty(Database::getSetting('notif_telegram_bot_token', '')),
+            'has_discord_webhook_url'       => !empty(Database::getSetting('notif_discord_webhook_url', '')),
             // Notifikasi Darurat (Telegram & Discord)
             'notif_telegram_enabled'        => Database::getSetting('notif_telegram_enabled', '0'),
-            'notif_telegram_bot_token'      => Database::getSetting('notif_telegram_bot_token', ''),
             'notif_telegram_chat_id'        => Database::getSetting('notif_telegram_chat_id', ''),
             'notif_discord_enabled'         => Database::getSetting('notif_discord_enabled', '0'),
-            'notif_discord_webhook_url'     => Database::getSetting('notif_discord_webhook_url', ''),
             'notif_trigger_service_restart' => Database::getSetting('notif_trigger_service_restart', '1'),
             'notif_trigger_disk_usage'      => Database::getSetting('notif_trigger_disk_usage', '1'),
             'notif_trigger_brute_force'     => Database::getSetting('notif_trigger_brute_force', '1'),
@@ -129,10 +130,14 @@ class DashboardController
         Database::setSetting('panel_title', $title);
         Database::setSetting('entrance_path', $entrance);
         Database::setSetting('panel_port', (string)$portNum);
-        Database::setSetting('cf_api_token', $cfToken);
+        if ($cfToken !== '') {
+            Database::setSetting('cf_api_token', $cfToken);
+        }
         Database::setSetting('cf_account_id', $cfAccount);
         Database::setSetting('cf_tunnel_id', $cfTunnelId);
-        Database::setSetting('cf_tunnel_token', $cfTunnelToken);
+        if ($cfTunnelToken !== '') {
+            Database::setSetting('cf_tunnel_token', $cfTunnelToken);
+        }
         $updateRepo = trim((string)($_POST['update_repo_url'] ?? ''));
         if ($updateRepo !== '') {
             Database::setSetting('update_repo_url', $updateRepo);
@@ -200,10 +205,24 @@ class DashboardController
         }
 
         $newHash = password_hash($newPass, PASSWORD_BCRYPT, ['cost' => 12]);
-        $update = $pdo->prepare("UPDATE users SET password_hash = :hash WHERE id = :id");
+
+        // Tingkatkan session_version agar seluruh sesi aktif di perangkat lain otomatis di-revoke
+        $update = $pdo->prepare("UPDATE users SET password_hash = :hash, session_version = session_version + 1 WHERE id = :id");
         $update->execute([':hash' => $newHash, ':id' => $userId]);
 
-        $_SESSION['settings_msg'] = 'Password berhasil diperbarui!';
+        // Perbarui session_version sesi lokal saat ini dan regenerate session ID
+        $newVer = (int)$pdo->query("SELECT session_version FROM users WHERE id = {$userId}")->fetchColumn();
+        $_SESSION['session_version'] = $newVer;
+        session_regenerate_id(true);
+
+        // Hapus file kredensial awal jika masih ada
+        $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
+        $initCreds = $root . '/data/initial_credentials.txt';
+        if (file_exists($initCreds)) {
+            @unlink($initCreds);
+        }
+
+        $_SESSION['settings_msg'] = 'Password berhasil diperbarui! Sesi login di perangkat lain telah diakhiri.';
         Response::redirect('/settings');
     }
 
@@ -222,10 +241,14 @@ class DashboardController
         $trigBrute    = isset($_POST['notif_trigger_brute_force']) ? '1' : '0';
 
         Database::setSetting('notif_telegram_enabled', $tgEnabled);
-        Database::setSetting('notif_telegram_bot_token', $tgToken);
+        if ($tgToken !== '') {
+            Database::setSetting('notif_telegram_bot_token', $tgToken);
+        }
         Database::setSetting('notif_telegram_chat_id', $tgChatId);
         Database::setSetting('notif_discord_enabled', $dcEnabled);
-        Database::setSetting('notif_discord_webhook_url', $dcWebhook);
+        if ($dcWebhook !== '') {
+            Database::setSetting('notif_discord_webhook_url', $dcWebhook);
+        }
         Database::setSetting('notif_trigger_service_restart', $trigRestart);
         Database::setSetting('notif_trigger_disk_usage', $trigDisk);
         Database::setSetting('notif_trigger_brute_force', $trigBrute);

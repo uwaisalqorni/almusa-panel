@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\Crypto;
 use App\Core\Database;
 use App\Core\Response;
 use App\Core\SystemMonitor;
@@ -134,7 +135,7 @@ class DatabaseController
             $insert->execute([
                 ':name'    => $dbName,
                 ':user'    => $dbUser,
-                ':pass'    => base64_encode($dbPass), // obfuscated for admin view
+                ':pass'    => Crypto::encrypt($dbPass),
                 ':charset' => $charset,
                 ':host'    => $accessHost,
             ]);
@@ -189,7 +190,7 @@ class DatabaseController
 
             $update = $pdoSqlite->prepare("UPDATE databases SET db_password_enc = :pass WHERE id = :id");
             $update->execute([
-                ':pass' => base64_encode($newPass),
+                ':pass' => Crypto::encrypt($newPass),
                 ':id'   => $id,
             ]);
 
@@ -303,7 +304,12 @@ class DatabaseController
 
             $server = $db['access_host'] ?: '127.0.0.1';
             $username = $db['db_user'] ?: 'root';
-            $plainPass = base64_decode($db['db_password_enc'] ?? '') ?: '';
+            $rawPass = (string)($db['db_password_enc'] ?? '');
+            if (Crypto::isEncrypted($rawPass)) {
+                $plainPass = (string)Crypto::decrypt($rawPass);
+            } else {
+                $plainPass = base64_decode($rawPass, true) ?: $rawPass;
+            }
 
             if ($username === 'root' || empty($plainPass)) {
                 $password = Database::getSetting('mysql_root_pass', '');

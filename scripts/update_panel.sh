@@ -130,6 +130,7 @@ if [ -d "${PANEL_ROOT}/data" ]; then
     chown -R www-data:www-data "${PANEL_ROOT}/data" 2>/dev/null || true
     chmod 2770 "${PANEL_ROOT}/data" 2>/dev/null || true
     find "${PANEL_ROOT}/data" -maxdepth 1 -type f -exec chmod 660 {} + 2>/dev/null || true
+    [ -f "${PANEL_ROOT}/data/secret.key" ] && chmod 600 "${PANEL_ROOT}/data/secret.key" 2>/dev/null || true
 fi
 echo -e "${GREEN}[✔] Izin berkas berhasil diperbarui.${NC}"
 

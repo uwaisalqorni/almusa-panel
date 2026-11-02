@@ -60,7 +60,7 @@ flowchart TD
 - Menyediakan 8 recovery codes sekali pakai saat pertama kali 2FA diaktifkan.
 
 ### 2.3. Session Hardening & Anti-Session Hijacking `🟡 SEBAGIAN`
-> ✅ Cookie `HttpOnly` + `SameSite=Strict` + `Secure` (bila HTTPS). ❌ Session fingerprint. ❌ Auto-logout 30 menit (saat ini cookie 7 hari tanpa idle timeout).
+> ✅ Cookie `HttpOnly` + `SameSite=Strict` + `Secure` (bila HTTPS). ✅ Auto-logout inactivity 30 menit (`Auth::INACTIVITY_TIMEOUT`). ✅ Revokasi sesi lintas perangkat saat password diubah (`session_version`). ✅ Enkripsi master key (`Crypto` libsodium/AES-256-GCM) untuk kredensial & masking DOM form. ❌ Session fingerprinting (User-Agent/IP /24).
 - **Cookie Security:** Wajib menggunakan flag `HttpOnly`, `SameSite=Strict`, dan `Secure` (jika HTTPS aktif).
 - **Session Fingerprinting:** Ikat ID sesi dengan kombinasi hash `User-Agent` + Blok IP Subnet (`/24`). Jika pengguna mengakses dari jaringan atau browser yang berbeda secara tiba-tiba, sesi otomatis diakhiri (revoke).
 - **Auto-Logout Inactivity:** Timeout otomatis setelah 30 menit tidak ada interaksi pengguna di UI.

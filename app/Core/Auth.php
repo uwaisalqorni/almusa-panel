@@ -42,10 +42,49 @@ class Auth
         }
     }
 
+    public const INACTIVITY_TIMEOUT = 1800; // 30 menit
+    private static ?array $cachedUser = null;
+
     public static function check(): bool
     {
         self::startSession();
-        return !empty($_SESSION['panel_user_id']);
+        if (empty($_SESSION['panel_user_id'])) {
+            return false;
+        }
+
+        $now = time();
+
+        // 1. Inactivity Timeout Check (30 Menit)
+        if (!empty($_SESSION['last_activity_time'])) {
+            $idle = $now - (int)$_SESSION['last_activity_time'];
+            if ($idle > self::INACTIVITY_TIMEOUT) {
+                self::logout();
+                $_SESSION['auth_error'] = 'Sesi Anda telah berakhir karena tidak ada aktivitas selama 30 menit. Silakan login kembali.';
+                return false;
+            }
+        }
+
+        // 2. Cross-Device Password Change Revocation Check
+        $user = self::user();
+        if (!$user) {
+            self::logout();
+            return false;
+        }
+
+        $currentSessionVer = (int)($_SESSION['session_version'] ?? 1);
+        $dbSessionVer = (int)($user['session_version'] ?? 1);
+        if ($currentSessionVer !== $dbSessionVer) {
+            self::logout();
+            $_SESSION['auth_error'] = 'Sesi Anda telah diakhiri karena password akun telah diubah.';
+            return false;
+        }
+
+        // Perbarui timestamp aktivitas terakhir (throttle 10 dtk untuk efisiensi write)
+        if (empty($_SESSION['last_activity_time']) || ($now - (int)$_SESSION['last_activity_time'] >= 10)) {
+            $_SESSION['last_activity_time'] = $now;
+        }
+
+        return true;
     }
 
     public static function id(): ?int
@@ -61,12 +100,17 @@ class Auth
             return null;
         }
 
+        if (self::$cachedUser !== null && (int)(self::$cachedUser['id'] ?? 0) === $id) {
+            return self::$cachedUser;
+        }
+
         try {
             $pdo = Database::getInstance();
-            $stmt = $pdo->prepare("SELECT id, username, last_login_ip, last_login_at, created_at FROM users WHERE id = :id LIMIT 1");
+            $stmt = $pdo->prepare("SELECT id, username, session_version, last_login_ip, last_login_at, created_at FROM users WHERE id = :id LIMIT 1");
             $stmt->execute([':id' => $id]);
             $user = $stmt->fetch();
-            return $user ?: null;
+            self::$cachedUser = $user ?: null;
+            return self::$cachedUser;
         } catch (\Throwable $e) {
             return null;
         }
@@ -77,14 +121,17 @@ class Auth
         self::startSession();
 
         $pdo = Database::getInstance();
-        $stmt = $pdo->prepare("SELECT id, username, password_hash FROM users WHERE username = :u LIMIT 1");
+        $stmt = $pdo->prepare("SELECT id, username, password_hash, session_version FROM users WHERE username = :u LIMIT 1");
         $stmt->execute([':u' => $username]);
         $user = $stmt->fetch();
 
         if ($user && password_verify($password, $user['password_hash'])) {
             session_regenerate_id(true);
             $_SESSION['panel_user_id'] = (int)$user['id'];
+            $_SESSION['session_version'] = (int)($user['session_version'] ?? 1);
+            $_SESSION['last_activity_time'] = time();
             $_SESSION['entrance_verified'] = true;
+            self::$cachedUser = null;
 
             $ip = RateLimiter::clientIp();
 
@@ -100,6 +147,7 @@ class Auth
     public static function logout(): void
     {
         self::startSession();
+        self::$cachedUser = null;
         $entranceVerified = !empty($_SESSION['entrance_verified']);
 
         $_SESSION = [];

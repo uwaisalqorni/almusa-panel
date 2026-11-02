@@ -102,6 +102,7 @@ class Database
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
+            session_version INTEGER NOT NULL DEFAULT 1,
             last_login_ip TEXT,
             last_login_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -230,6 +231,16 @@ SQL;
             $pdo->exec("ALTER TABLE sites ADD COLUMN ssl_provider TEXT DEFAULT 'letsencrypt'");
         } catch (\Throwable $e) {}
 
+        // Migrate users table to add session_version for instant cross-device revocation
+        try {
+            $pdo->exec("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1");
+        } catch (\Throwable $e) {}
+
+        // Auto-encrypt existing plaintext secrets in SQLite
+        try {
+            self::encryptExistingSecrets();
+        } catch (\Throwable $e) {}
+
         // Seed default admin and settings if not present
         $stmt = $pdo->query("SELECT COUNT(*) AS total FROM users");
         $count = (int)$stmt->fetchColumn();
@@ -326,18 +337,78 @@ SQL;
         }
     }
 
+    public const SENSITIVE_SETTINGS = [
+        'mysql_root_pass',
+        'cf_api_token',
+        'cf_tunnel_token',
+        'cloud_storage_secret_key',
+        'notif_telegram_bot_token',
+        'notif_discord_webhook_url',
+    ];
+
+    /**
+     * Memigrasikan rahasia lama (plaintext / base64) ke format enkripsi simetris master key
+     */
+    public static function encryptExistingSecrets(): void
+    {
+        $pdo = self::getInstance();
+
+        foreach (self::SENSITIVE_SETTINGS as $k) {
+            $stmt = $pdo->prepare("SELECT key_value FROM settings WHERE key_name = :k LIMIT 1");
+            $stmt->execute([':k' => $k]);
+            $raw = $stmt->fetchColumn();
+            if ($raw !== false && !empty($raw) && !Crypto::isEncrypted((string)$raw)) {
+                $enc = Crypto::encrypt((string)$raw);
+                $up = $pdo->prepare("UPDATE settings SET key_value = :val WHERE key_name = :k");
+                $up->execute([':val' => $enc, ':k' => $k]);
+            }
+        }
+
+        // Migrasi legacy base64 password pada tabel databases ke Crypto master key
+        try {
+            $stmt = $pdo->query("SELECT id, db_password_enc FROM databases");
+            $dbs = $stmt->fetchAll();
+            foreach ($dbs as $db) {
+                $p = (string)($db['db_password_enc'] ?? '');
+                if ($p !== '' && !Crypto::isEncrypted($p)) {
+                    $plain = base64_decode($p, true);
+                    $toEncrypt = ($plain !== false) ? $plain : $p;
+                    $enc = Crypto::encrypt($toEncrypt);
+                    $up = $pdo->prepare("UPDATE databases SET db_password_enc = :pass WHERE id = :id");
+                    $up->execute([':pass' => $enc, ':id' => $db['id']]);
+                }
+            }
+        } catch (\Throwable $e) {}
+    }
+
     public static function getSetting(string $key, ?string $default = null): ?string
     {
         $pdo = self::getInstance();
         $stmt = $pdo->prepare("SELECT key_value FROM settings WHERE key_name = :key LIMIT 1");
         $stmt->execute([':key' => $key]);
         $row = $stmt->fetch();
-        return $row ? (string)$row['key_value'] : $default;
+        if (!$row) {
+            return $default;
+        }
+
+        $val = (string)$row['key_value'];
+        if (Crypto::isEncrypted($val)) {
+            $decrypted = Crypto::decrypt($val);
+            return $decrypted !== null ? $decrypted : $default;
+        }
+
+        return $val;
     }
 
     public static function setSetting(string $key, string $value): void
     {
         $pdo = self::getInstance();
+
+        // Enkripsi otomatis jika field termasuk dalam daftar kunci sensitif
+        if (in_array($key, self::SENSITIVE_SETTINGS, true) && $value !== '') {
+            $value = Crypto::encrypt($value);
+        }
+
         $stmt = $pdo->prepare("
             INSERT INTO settings (key_name, key_value, updated_at)
             VALUES (:key, :val, CURRENT_TIMESTAMP)

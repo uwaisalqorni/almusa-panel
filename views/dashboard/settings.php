@@ -68,7 +68,7 @@ $csrf = \App\Core\Auth::token();
             <div class="field">
                 <label class="label" for="cf_api_token">API token</label>
                 <div class="input-group">
-                    <input type="password" id="cf_api_token" name="cf_api_token" class="input has-reveal" value="<?= e($settings['cf_api_token']) ?>" placeholder="Izin: Account · Cloudflare Tunnel · Edit, Zone · DNS · Edit">
+                    <input type="password" id="cf_api_token" name="cf_api_token" class="input has-reveal" value="" placeholder="<?= !empty($settings['has_cf_api_token']) ? '•••••••• (Sudah tersimpan. Kosongkan jika tidak diubah)' : 'Izin: Account · Cloudflare Tunnel · Edit, Zone · DNS · Edit' ?>">
                     <button type="button" class="icon-btn reveal" data-toggle-password="cf_api_token" aria-label="Tampilkan token"><?= ui_icon('eye') ?></button>
                 </div>
             </div>
@@ -85,7 +85,7 @@ $csrf = \App\Core\Auth::token();
             <div class="field">
                 <label class="label" for="cf_tunnel_token">Tunnel token <span class="opt">opsional</span></label>
                 <div class="input-group">
-                    <input type="password" id="cf_tunnel_token" name="cf_tunnel_token" class="input has-reveal" value="<?= e($settings['cf_tunnel_token']) ?>" placeholder="eyJhIjoi…">
+                    <input type="password" id="cf_tunnel_token" name="cf_tunnel_token" class="input has-reveal" value="" placeholder="<?= !empty($settings['has_cf_tunnel_token']) ? '•••••••• (Sudah tersimpan. Kosongkan jika tidak diubah)' : 'eyJhIjoi…' ?>">
                     <button type="button" class="icon-btn reveal" data-toggle-password="cf_tunnel_token" aria-label="Tampilkan token"><?= ui_icon('eye') ?></button>
                 </div>
             </div>
@@ -98,7 +98,7 @@ $csrf = \App\Core\Auth::token();
             <div class="field">
                 <label class="label" for="mysql_root_pass">Password root MySQL / MariaDB</label>
                 <div class="input-group">
-                    <input type="password" id="mysql_root_pass" name="mysql_root_pass" class="input has-reveal" value="<?= e($settings['mysql_root_pass']) ?>" placeholder="Password root">
+                    <input type="password" id="mysql_root_pass" name="mysql_root_pass" class="input has-reveal" value="" placeholder="<?= !empty($settings['has_mysql_root_pass']) ? '•••••••• (Sudah tersimpan. Kosongkan jika tidak diubah)' : 'Password root MySQL / MariaDB' ?>">
                     <button type="button" class="icon-btn reveal" data-toggle-password="mysql_root_pass" aria-label="Tampilkan password"><?= ui_icon('eye') ?></button>
                 </div>
             </div>
@@ -172,7 +172,7 @@ $csrf = \App\Core\Auth::token();
                     <div class="field" style="margin-bottom: 12px;">
                         <label class="label" for="notif_telegram_bot_token" style="font-size: 12px;">Bot Token</label>
                         <div class="input-group">
-                            <input type="password" id="notif_telegram_bot_token" name="notif_telegram_bot_token" class="input has-reveal mono" value="<?= e($settings['notif_telegram_bot_token']) ?>" placeholder="Contoh: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ">
+                            <input type="password" id="notif_telegram_bot_token" name="notif_telegram_bot_token" class="input has-reveal mono" value="" placeholder="<?= !empty($settings['has_telegram_bot_token']) ? '•••••••• (Sudah tersimpan. Kosongkan jika tidak diubah)' : 'Contoh: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ' ?>">
                             <button type="button" class="icon-btn reveal" data-toggle-password="notif_telegram_bot_token" aria-label="Tampilkan token"><?= ui_icon('eye') ?></button>
                         </div>
                         <div class="help" style="font-size: 11px;">Dapatkan token bot dengan membuat bot baru di <b>@BotFather</b> pada Telegram.</div>
@@ -210,7 +210,10 @@ $csrf = \App\Core\Auth::token();
 
                     <div class="field" style="margin-bottom: 14px;">
                         <label class="label" for="notif_discord_webhook_url" style="font-size: 12px;">Webhook URL</label>
-                        <input type="url" id="notif_discord_webhook_url" name="notif_discord_webhook_url" class="input mono" value="<?= e($settings['notif_discord_webhook_url']) ?>" placeholder="https://discord.com/api/webhooks/...">
+                        <div class="input-group">
+                            <input type="password" id="notif_discord_webhook_url" name="notif_discord_webhook_url" class="input has-reveal mono" value="" placeholder="<?= !empty($settings['has_discord_webhook_url']) ? '•••••••• (Sudah tersimpan. Kosongkan jika tidak diubah)' : 'https://discord.com/api/webhooks/...' ?>">
+                            <button type="button" class="icon-btn reveal" data-toggle-password="notif_discord_webhook_url" aria-label="Tampilkan webhook"><?= ui_icon('eye') ?></button>
+                        </div>
                     </div>
 
                     <div style="display:flex; justify-content: flex-end;">
@@ -305,8 +308,13 @@ async function testNotificationChannel(channel) {
         btn = document.getElementById('btnTestTelegram');
         const token = document.getElementById('notif_telegram_bot_token').value.trim();
         const chatId = document.getElementById('notif_telegram_chat_id').value.trim();
-        if (!token || !chatId) {
-            Almusa.toast('Harap masukkan Bot Token dan Chat ID Telegram terlebih dahulu.', 'error');
+        const hasSaved = <?= !empty($settings['has_telegram_bot_token']) ? 'true' : 'false' ?>;
+        if (!token && !hasSaved) {
+            Almusa.toast('Harap masukkan Bot Token Telegram terlebih dahulu.', 'error');
+            return;
+        }
+        if (!chatId) {
+            Almusa.toast('Harap masukkan Chat ID Telegram terlebih dahulu.', 'error');
             return;
         }
         payload.token = token;
@@ -314,7 +322,8 @@ async function testNotificationChannel(channel) {
     } else {
         btn = document.getElementById('btnTestDiscord');
         const webhook = document.getElementById('notif_discord_webhook_url').value.trim();
-        if (!webhook) {
+        const hasSaved = <?= !empty($settings['has_discord_webhook_url']) ? 'true' : 'false' ?>;
+        if (!webhook && !hasSaved) {
             Almusa.toast('Harap masukkan Discord Webhook URL terlebih dahulu.', 'error');
             return;
         }
