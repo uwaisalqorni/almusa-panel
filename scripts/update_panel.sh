@@ -135,6 +135,12 @@ if [ -d "${PANEL_ROOT}/data" ]; then
     find "${PANEL_ROOT}/data" -maxdepth 1 -type f -exec chmod 660 {} + 2>/dev/null || true
     [ -f "${PANEL_ROOT}/data/secret.key" ] && chmod 600 "${PANEL_ROOT}/data/secret.key" 2>/dev/null || true
 fi
+
+# Ensure /www/wwwroot is writable by www-data
+if [ -d "/www/wwwroot" ]; then
+    chown www-data:www-data /www/wwwroot 2>/dev/null || true
+    chmod 0775 /www/wwwroot 2>/dev/null || true
+fi
 echo -e "${GREEN}[✔] Izin berkas berhasil diperbarui.${NC}"
 
 # 6. Stage 4: Non-Destructive Database Auto-Migration & Syntax Verification

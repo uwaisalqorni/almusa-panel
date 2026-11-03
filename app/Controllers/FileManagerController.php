@@ -31,7 +31,14 @@ class FileManagerController
         ];
 
         if (!is_dir('/www/wwwroot')) {
-            @mkdir('/www/wwwroot', 0755, true);
+            @mkdir('/www/wwwroot', 0775, true);
+        }
+        if (!is_writable('/www/wwwroot')) {
+            @chmod('/www/wwwroot', 0775);
+            $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
+            if (is_file($script)) {
+                @exec("sudo " . escapeshellarg($script) . " fix_permissions wwwroot /www/wwwroot 2>&1");
+            }
         }
 
         if (empty($allSites)) {
@@ -873,16 +880,7 @@ class FileManagerController
         }
 
         // Self-healing directory permissions if owned by root
-        if (!is_writable($targetDir)) {
-            @chmod($targetDir, 0755);
-            if (!is_writable($targetDir)) {
-                $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)$site['domain']);
-                $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
-                if (is_file($script)) {
-                    @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain) . " " . escapeshellarg($baseDir) . " 2>&1");
-                }
-            }
-        }
+        $this->ensureWritable($targetDir, $site);
 
         // 1. Handle Chunked Upload (chunk_index & total_chunks)
         if (isset($_POST['chunk_index'], $_POST['total_chunks'])) {
@@ -917,10 +915,16 @@ class FileManagerController
             $in = @fopen($chunkFile['tmp_name'], 'rb');
             $out = @fopen($partPath, $chunkIndex === 0 ? 'wb' : 'ab');
 
+            if (!$out) {
+                // If opening target file fails, force fix_permissions on targetDir and retry
+                $this->ensureWritable($targetDir, $site);
+                $out = @fopen($partPath, $chunkIndex === 0 ? 'wb' : 'ab');
+            }
+
             if (!$in || !$out) {
                 if ($in) @fclose($in);
                 if ($out) @fclose($out);
-                Response::json(['success' => false, 'error' => 'Gagal menulis potongan file ke direktori tujuan. Periksa izin folder atau sisa ruang disk.'], 500);
+                Response::json(['success' => false, 'error' => 'Gagal menulis potongan file ke direktori tujuan (' . basename($targetDir) . '). Periksa izin folder atau sisa ruang disk.'], 500);
             }
 
             stream_copy_to_stream($in, $out);
@@ -1224,6 +1228,30 @@ class FileManagerController
         header('Content-Length: ' . filesize($fullPath));
         readfile($fullPath);
         exit;
+    }
+
+    /**
+     * Ensures target directory is writable by www-data, triggering self-healing if needed.
+     */
+    private function ensureWritable(string $dir, array $site): void
+    {
+        if (is_writable($dir)) {
+            return;
+        }
+
+        @chmod($dir, 0775);
+        if (is_writable($dir)) {
+            return;
+        }
+
+        $domain = !empty($site['is_root_storage']) ? 'wwwroot' : preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($site['domain'] ?? 'wwwroot'));
+        $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
+
+        if (is_file($script)) {
+            @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($dir) . " 2>&1");
+        }
+
+        @chmod($dir, 0775);
     }
 
     /**

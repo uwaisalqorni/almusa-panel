@@ -32,7 +32,7 @@ canonical_wwwroot() {
     local resolved
     resolved="$(realpath -m -- "$1" 2>/dev/null)" || return 1
     case "$resolved" in
-        /www/wwwroot/?*) printf '%s' "$resolved" ;;
+        /www/wwwroot|/www/wwwroot/*) printf '%s' "$resolved" ;;
         *) return 1 ;;
     esac
 }
@@ -220,8 +220,10 @@ EOF
             exit 1
         fi
         chown -R www-data:www-data -- "$SAFE_TARGET" 2>/dev/null || true
+        chmod 0775 "$SAFE_TARGET" 2>/dev/null || true
         find "$SAFE_TARGET" -type d -exec chmod 0755 {} + 2>/dev/null || true
         find "$SAFE_TARGET" -type f -exec chmod 0644 {} + 2>/dev/null || true
+        [ "$SAFE_TARGET" = "/www/wwwroot" ] && chmod 0775 /www/wwwroot 2>/dev/null || true
         echo "[SUCCESS] Permissions set: directories 0755, files 0644, user www-data:www-data."
         ;;
 

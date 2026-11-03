@@ -351,6 +351,11 @@ else
     chmod 2770 /www/panel/data
     find /www/panel/data -maxdepth 1 -type f -exec chmod 660 {} + 2>/dev/null || true
     [ -f /www/panel/data/secret.key ] && chmod 600 /www/panel/data/secret.key 2>/dev/null || true
+
+    # Set standard permissions for /www/wwwroot (allow uploads when site_id=0)
+    mkdir -p /www/wwwroot
+    chown -R www-data:www-data /www/wwwroot
+    chmod 0775 /www/wwwroot
 fi
 
 # Custom Entrance Override (if provided via CLI -e or env)
