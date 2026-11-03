@@ -7,9 +7,78 @@ use App\Core\Crypto;
 use App\Core\Database;
 use App\Core\EnvManager;
 use App\Core\Response;
+use App\Core\SystemMonitor;
 
 class SiteController
 {
+    /**
+     * Dapatkan daftar versi PHP yang benar-benar terpasang di sistem.
+     * Hanya versi yang terpasang yang akan ditampilkan dan dapat dipilih.
+     *
+     * @return array<string>
+     */
+    public static function getInstalledPhpVersions(): array
+    {
+        $supported = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
+        $installed = [];
+
+        foreach ($supported as $ver) {
+            $hasBin  = file_exists("/usr/sbin/php-fpm{$ver}");
+            $hasConf = file_exists("/etc/php/{$ver}/fpm/php-fpm.conf");
+            $hasSock = file_exists("/run/php/php{$ver}-fpm.sock");
+            $isActive = SystemMonitor::isServiceActive("php{$ver}-fpm");
+
+            if ($hasBin || $hasConf || $hasSock || $isActive) {
+                $installed[] = $ver;
+            }
+        }
+
+        // Auto-discovery dari direktori konfigurasi /etc/php/*/fpm
+        $confDirs = glob('/etc/php/*/fpm/php-fpm.conf') ?: [];
+        foreach ($confDirs as $conf) {
+            if (preg_match('#/etc/php/([0-9]+\.[0-9]+)/fpm#', $conf, $m)) {
+                if (in_array($m[1], $supported, true) && !in_array($m[1], $installed, true)) {
+                    $installed[] = $m[1];
+                }
+            }
+        }
+
+        // Auto-discovery dari binary /usr/sbin/php-fpm*
+        $bins = glob('/usr/sbin/php-fpm[0-9]*') ?: [];
+        foreach ($bins as $bin) {
+            if (preg_match('#/usr/sbin/php-fpm([0-9]+\.[0-9]+)#', $bin, $m)) {
+                if (in_array($m[1], $supported, true) && !in_array($m[1], $installed, true)) {
+                    $installed[] = $m[1];
+                }
+            }
+        }
+
+        // Auto-discovery dari soket aktif /run/php/php*-fpm.sock
+        $socks = glob('/run/php/php*-fpm.sock') ?: [];
+        foreach ($socks as $sock) {
+            if (preg_match('#/run/php/php([0-9]+\.[0-9]+)-fpm\.sock#', $sock, $m)) {
+                if (in_array($m[1], $supported, true) && !in_array($m[1], $installed, true)) {
+                    $installed[] = $m[1];
+                }
+            }
+        }
+
+        sort($installed);
+        $installed = array_values(array_unique($installed));
+
+        // Fallback untuk mode development di Windows / non-server
+        if (empty($installed) && (PHP_OS_FAMILY === 'Windows' || !file_exists('/usr/sbin'))) {
+            $cliVer = PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION;
+            if (in_array($cliVer, $supported, true)) {
+                $installed[] = $cliVer;
+            } else {
+                $installed[] = '8.3';
+            }
+        }
+
+        return $installed;
+    }
+
     public function index(): void
     {
         $pdo = Database::getInstance();
@@ -22,16 +91,17 @@ class SiteController
 
         $databases = $pdo->query("SELECT id, db_name, db_user, charset, access_host FROM databases ORDER BY db_name ASC")->fetchAll();
 
-        $phpVersions = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
+        $installedPhpVersions = self::getInstalledPhpVersions();
         $rewrites = ['default', 'laravel', 'wordpress', 'thinkphp'];
 
         Response::view('sites/index', [
-            'title'       => 'Websites & Virtual Hosts',
-            'user'        => Auth::user(),
-            'sites'       => $sites,
-            'databases'   => $databases,
-            'phpVersions' => $phpVersions,
-            'rewrites'    => $rewrites,
+            'title'                => 'Websites & Virtual Hosts',
+            'user'                 => Auth::user(),
+            'sites'                => $sites,
+            'databases'            => $databases,
+            'installedPhpVersions' => $installedPhpVersions,
+            'phpVersions'          => $installedPhpVersions,
+            'rewrites'             => $rewrites,
         ]);
     }
 
@@ -51,12 +121,30 @@ class SiteController
             $docroot = "/www/wwwroot/{$domain}";
         }
 
+        $docroot = rtrim($docroot, '/');
+
         if (!preg_match('/^[a-zA-Z0-9_\.\/\-]+$/', $docroot)) {
             Response::json(['success' => false, 'error' => 'Path document root tidak valid.'], 400);
         }
 
-        if (!in_array($phpVer, ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'])) {
-            Response::json(['success' => false, 'error' => 'Versi PHP tidak didukung.'], 400);
+        if (str_contains($docroot, '..')) {
+            Response::json(['success' => false, 'error' => 'Path document root tidak boleh mengandung traversal (..).'], 400);
+        }
+
+        if (!str_starts_with($docroot, '/www/wwwroot') && !str_starts_with($docroot, '/www/')) {
+            Response::json(['success' => false, 'error' => 'Document root harus berada di dalam direktori /www/wwwroot.'], 400);
+        }
+
+        $installedPhp = self::getInstalledPhpVersions();
+        if (empty($installedPhp)) {
+            Response::json(['success' => false, 'error' => 'Tidak ada versi PHP yang terpasang di server. Pasang PHP terlebih dahulu melalui menu App Store & Plugins.'], 400);
+        }
+
+        if (!in_array($phpVer, $installedPhp, true)) {
+            Response::json([
+                'success' => false,
+                'error'   => "Versi PHP {$phpVer} belum terpasang di server. Versi yang terpasang: " . implode(', ', $installedPhp) . ". Silakan pasang PHP {$phpVer} di menu App Store & Plugins."
+            ], 400);
         }
 
         if (!in_array($rewrite, ['default', 'laravel', 'wordpress', 'thinkphp'])) {
@@ -115,6 +203,14 @@ class SiteController
 
         if (!in_array($newVersion, ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'])) {
             Response::json(['success' => false, 'error' => 'Versi PHP tidak valid.'], 400);
+        }
+
+        $installedPhp = self::getInstalledPhpVersions();
+        if (!in_array($newVersion, $installedPhp, true)) {
+            Response::json([
+                'success' => false,
+                'error'   => "Versi PHP {$newVersion} belum terpasang di server. Versi yang terpasang: " . implode(', ', $installedPhp) . ". Silakan pasang melalui menu App Store & Plugins."
+            ], 400);
         }
 
         $pdo = Database::getInstance();

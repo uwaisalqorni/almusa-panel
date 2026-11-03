@@ -70,9 +70,12 @@ $rewriteLabels = [
                             <select class="select select-sm" aria-label="Versi PHP untuk <?= e($site['domain']) ?>"
                                     data-current="<?= e($site['php_version']) ?>"
                                     onchange="switchSitePhp(<?= (int)$site['id'] ?>, this.value)">
-                                <?php foreach ($phpVersions as $ver): ?>
+                                <?php foreach ($installedPhpVersions as $ver): ?>
                                     <option value="<?= e($ver) ?>" <?= $site['php_version'] === $ver ? 'selected' : '' ?>>PHP <?= e($ver) ?></option>
                                 <?php endforeach; ?>
+                                <?php if (!in_array($site['php_version'], $installedPhpVersions, true)): ?>
+                                    <option value="<?= e($site['php_version']) ?>" selected disabled>PHP <?= e($site['php_version']) ?> (Belum terpasang)</option>
+                                <?php endif; ?>
                             </select>
                         </td>
                         <td>
@@ -151,21 +154,39 @@ $rewriteLabels = [
             <div class="modal-body">
                 <div class="field">
                     <label class="label" for="siteDomain">Nama domain</label>
-                    <input type="text" id="siteDomain" class="input" placeholder="contoh: app.domain.com" required>
+                    <input type="text" id="siteDomain" class="input" placeholder="contoh: app.domain.com" required autocomplete="off">
                 </div>
                 <div class="field">
-                    <label class="label" for="siteDocroot">Document root <span class="opt">opsional</span></label>
-                    <input type="text" id="siteDocroot" class="input" placeholder="/www/wwwroot/app.domain.com">
-                    <div class="help">Kosongkan untuk memakai path bawaan.</div>
+                    <label class="label" for="siteDocroot">
+                        Document root <span class="opt">opsional</span>
+                    </label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="siteDocroot" class="input" placeholder="/www/wwwroot/app.domain.com" style="flex: 1;" autocomplete="off">
+                        <button type="button" class="btn btn-secondary" onclick="openFolderPickerModal()" title="Pilih direktori file di server" style="white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px;">
+                            <?= ui_icon('folder') ?> Pilih Direktori
+                        </button>
+                    </div>
+                    <div class="help">Pilih folder yang ada di <code>/www/wwwroot</code> atau buat folder baru. Kosongkan untuk memakai path bawaan.</div>
                 </div>
                 <div class="field-row">
                     <div class="field">
                         <label class="label" for="sitePhp">Versi PHP</label>
-                        <select id="sitePhp" class="select">
-                            <?php foreach ($phpVersions as $ver): ?>
-                                <option value="<?= e($ver) ?>" <?= $ver === '8.3' ? 'selected' : '' ?>>PHP <?= e($ver) ?></option>
-                            <?php endforeach; ?>
-                        </select>
+                        <?php if (empty($installedPhpVersions)): ?>
+                            <div class="callout callout-warning" style="margin-bottom: 8px; font-size: 12px; padding: 8px 12px; border-radius: var(--radius-sm); background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fbbf24;">
+                                <?= ui_icon('alert-triangle') ?> Belum ada PHP terpasang. <a href="/plugins" style="color: #38bdf8; text-decoration: underline; font-weight: 600;">Buka App Store</a>
+                            </div>
+                            <select id="sitePhp" class="select" disabled>
+                                <option value="" disabled selected>(Tidak ada versi PHP terpasang)</option>
+                            </select>
+                        <?php else: ?>
+                            <select id="sitePhp" class="select" required>
+                                <?php foreach ($installedPhpVersions as $ver): ?>
+                                    <option value="<?= e($ver) ?>" <?= $ver === '8.3' || $ver === reset($installedPhpVersions) ? 'selected' : '' ?>>
+                                        PHP <?= e($ver) ?> (Terpasang)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        <?php endif; ?>
                     </div>
                     <div class="field">
                         <label class="label" for="siteRewrite">URL rewrite</label>
@@ -180,7 +201,7 @@ $rewriteLabels = [
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeAddSiteModal()">Batal</button>
-                <button type="submit" class="btn btn-primary" id="addSiteSubmit">Buat website</button>
+                <button type="submit" class="btn btn-primary" id="addSiteSubmit" <?= empty($installedPhpVersions) ? 'disabled title="Pasang PHP terlebih dahulu di App Store"' : '' ?>>Buat website</button>
             </div>
         </form>
     </div>
@@ -210,6 +231,99 @@ $rewriteLabels = [
         <div class="modal-footer">
             <button type="button" class="btn btn-secondary" onclick="closeDeleteSiteModal()">Batal</button>
             <button type="button" class="btn btn-danger-solid" id="confirmDeleteBtn" onclick="confirmDeleteSite()">Hapus website</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Pilih Document Root -->
+<div class="modal-backdrop" id="folderPickerModal" style="z-index: 120;">
+    <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="fpModalTitle" style="max-width: 650px; display: flex; flex-direction: column; max-height: 85vh;">
+        <div class="modal-header">
+            <div>
+                <h2 class="modal-title" id="fpModalTitle" style="display: flex; align-items: center; gap: 8px;">
+                    <?= ui_icon('folder') ?> Pilih Direktori Document Root
+                </h2>
+                <p class="modal-subtitle">Pilih folder proyek yang sudah ada atau buat folder baru di dalam <code>/www/wwwroot</code>.</p>
+            </div>
+            <button type="button" class="icon-btn" onclick="closeFolderPickerModal()" aria-label="Tutup"><?= ui_icon('x') ?></button>
+        </div>
+
+        <div class="modal-body" style="padding-top: 12px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;">
+            <!-- Nav Bar & Actions -->
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px;">
+                <div id="fpBreadcrumbs" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 13px; font-family: monospace; overflow-x: auto;">
+                    <!-- dynamic breadcrumb items -->
+                </div>
+                <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="fpBtnUp" onclick="fpGoUp()" title="Naik satu tingkat">
+                        <?= ui_icon('arrow-up') ?> Naik
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="fpNewFolder()" title="Buat folder baru di direktori ini">
+                        <?= ui_icon('plus') ?> Folder Baru
+                    </button>
+                    <button type="button" class="btn btn-ghost btn-icon btn-sm" onclick="fpRefresh()" title="Segarkan direktori">
+                        <?= ui_icon('refresh') ?>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Current folder banner option -->
+            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(56, 189, 248, 0.08); border: 1px dashed rgba(56, 189, 248, 0.4); border-radius: var(--radius-sm); padding: 10px 14px;">
+                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 12px;">
+                    <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-2); font-weight: 600;">Gunakan folder saat ini:</div>
+                    <code id="fpCurrentFolderLabel" style="color: #38bdf8; font-size: 13px; font-weight: 600;">/www/wwwroot</code>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="fpUseCurrentFolder()" style="flex-shrink: 0; font-weight: 600;">
+                    <?= ui_icon('check-circle') ?> Pilih Folder Ini
+                </button>
+            </div>
+
+            <!-- Directory Listing -->
+            <div style="border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-surface); min-height: 220px; max-height: 300px; overflow-y: auto;">
+                <div id="fpLoading" style="text-align: center; padding: 40px 20px; color: var(--text-2);">
+                    <div class="spinner" style="margin-bottom: 8px;"></div>
+                    <div>Memuat daftar folder…</div>
+                </div>
+
+                <div id="fpListTable" style="display: none; width: 100%;">
+                    <table class="table" style="margin: 0; font-size: 13px;">
+                        <thead>
+                            <tr style="background: rgba(255,255,255,0.02);">
+                                <th style="padding: 8px 12px;">Nama Folder</th>
+                                <th style="padding: 8px 12px; width: 90px;">Hak Akses</th>
+                                <th style="padding: 8px 12px; width: 140px; text-align: right;">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fpFolderListBody">
+                            <!-- dynamic rows -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="fpEmpty" style="display: none; text-align: center; padding: 40px 20px; color: var(--text-2);">
+                    <?= ui_icon('folder', 'icon-xl') ?>
+                    <div style="font-weight: 600; font-size: 14px; margin-top: 10px; color: var(--text-1);">Tidak ada subfolder di dalam folder ini</div>
+                    <p style="font-size: 12px; margin: 6px 0 14px; color: var(--text-2);">Anda dapat menggunakan folder saat ini atau membuat subfolder baru.</p>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="fpNewFolder()">
+                        <?= ui_icon('plus') ?> Buat Subfolder Baru
+                    </button>
+                </div>
+            </div>
+
+            <!-- Selected preview display -->
+            <div style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 4px 2px;">
+                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    <span style="color: var(--text-2);">Folder terpilih: </span>
+                    <strong id="fpSelectedDisplay" style="color: var(--text-1); font-family: monospace;">/www/wwwroot</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeFolderPickerModal()">Batal</button>
+            <button type="button" class="btn btn-primary" id="fpBtnConfirm" onclick="fpConfirmSelection()">
+                Terapkan Pilihan Folder
+            </button>
         </div>
     </div>
 </div>
@@ -1542,4 +1656,252 @@ function clearTerminalOutput() {
     }
     setTerminalStatus('idle', 'Idle');
 }
+
+// --- Document Root Directory Picker & PHP Version Handling ---
+var fpCurrentPath = '';
+var fpSelectedPath = '/www/wwwroot';
+
+function openFolderPickerModal() {
+    var cur = (document.getElementById('siteDocroot').value || '').trim();
+    if (cur.startsWith('/www/wwwroot')) {
+        fpSelectedPath = cur;
+        var rel = cur.replace(/^\/www\/wwwroot\/?/, '').trim();
+        fpCurrentPath = rel;
+    } else {
+        fpSelectedPath = '/www/wwwroot';
+        fpCurrentPath = '';
+    }
+    var disp = document.getElementById('fpSelectedDisplay');
+    if (disp) disp.textContent = fpSelectedPath;
+    Almusa.openModal('folderPickerModal');
+    fpLoadDirectory(fpCurrentPath);
+}
+
+function closeFolderPickerModal() {
+    Almusa.closeModal('folderPickerModal');
+}
+
+async function fpLoadDirectory(relPath) {
+    fpCurrentPath = (relPath || '').trim();
+    var loading = document.getElementById('fpLoading');
+    var table = document.getElementById('fpListTable');
+    var empty = document.getElementById('fpEmpty');
+    var tbody = document.getElementById('fpFolderListBody');
+    var btnUp = document.getElementById('fpBtnUp');
+    var curFolderLabel = document.getElementById('fpCurrentFolderLabel');
+
+    if (loading) loading.style.display = 'block';
+    if (table) table.style.display = 'none';
+    if (empty) empty.style.display = 'none';
+    if (tbody) tbody.innerHTML = '';
+
+    var fullCur = '/www/wwwroot' + (fpCurrentPath ? '/' + fpCurrentPath : '');
+    if (curFolderLabel) curFolderLabel.textContent = fullCur;
+    if (btnUp) btnUp.disabled = !fpCurrentPath;
+
+    fpRenderBreadcrumbs();
+
+    try {
+        var res = await fetch('/api/files/list?site_id=0&path=' + encodeURIComponent(fpCurrentPath), {
+            headers: { 'Accept': 'application/json' }
+        });
+        var data = await res.json();
+
+        if (loading) loading.style.display = 'none';
+
+        if (!data.success) {
+            Almusa.toast(data.error || 'Gagal membaca direktori server.', 'error');
+            if (empty) empty.style.display = 'block';
+            return;
+        }
+
+        var dirs = data.dirs || [];
+        if (dirs.length === 0) {
+            if (empty) empty.style.display = 'block';
+        } else {
+            if (table) table.style.display = 'table';
+            dirs.forEach(function (d) {
+                var tr = document.createElement('tr');
+                var folderFullPath = '/www/wwwroot/' + d.path;
+                var isSelected = (fpSelectedPath === folderFullPath);
+
+                tr.style.cursor = 'pointer';
+                if (isSelected) {
+                    tr.style.background = 'rgba(56, 189, 248, 0.12)';
+                }
+
+                tr.onclick = function (e) {
+                    if (e.target.closest('button')) return;
+                    fpSetSelected(folderFullPath, tr);
+                };
+
+                tr.ondblclick = function (e) {
+                    if (e.target.closest('button')) return;
+                    fpLoadDirectory(d.path);
+                };
+
+                var safeName = Almusa.escapeHtml(d.name);
+                var safePerm = Almusa.escapeHtml(d.perms_num || '0755');
+                var escapedFull = folderFullPath.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                var escapedRel = d.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+                tr.innerHTML = '<td style="padding: 8px 12px; font-weight: 500;">' +
+                    '<span style="display: inline-flex; align-items: center; gap: 8px;">' +
+                    '<svg class="icon text-primary" aria-hidden="true" style="width: 16px; height: 16px;"><use href="#i-folder"/></svg>' +
+                    '<span>' + safeName + '</span>' +
+                    '</span>' +
+                    '</td>' +
+                    '<td style="padding: 8px 12px; color: var(--text-2); font-family: monospace; font-size: 12px;">' +
+                    safePerm +
+                    '</td>' +
+                    '<td style="padding: 8px 12px; text-align: right; white-space: nowrap;">' +
+                    '<button type="button" class="btn btn-secondary btn-sm" style="margin-right: 4px;" onclick="event.stopPropagation(); fpQuickPick(\'' + escapedFull + '\')">Pilih</button>' +
+                    '<button type="button" class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); fpLoadDirectory(\'' + escapedRel + '\')">Buka &rarr;</button>' +
+                    '</td>';
+
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (err) {
+        if (loading) loading.style.display = 'none';
+        if (empty) empty.style.display = 'block';
+        Almusa.toast('Gagal memuat direktori.', 'error');
+    }
+}
+
+function fpRenderBreadcrumbs() {
+    var bc = document.getElementById('fpBreadcrumbs');
+    if (!bc) return;
+    bc.innerHTML = '';
+
+    var rootBtn = document.createElement('a');
+    rootBtn.href = 'javascript:void(0)';
+    rootBtn.style.color = '#38bdf8';
+    rootBtn.style.textDecoration = 'none';
+    rootBtn.textContent = '/www/wwwroot';
+    rootBtn.onclick = function () { fpLoadDirectory(''); };
+    bc.appendChild(rootBtn);
+
+    if (!fpCurrentPath) return;
+
+    var parts = fpCurrentPath.split('/').filter(Boolean);
+    var accum = '';
+    parts.forEach(function (part, idx) {
+        accum += (accum ? '/' : '') + part;
+        var sep = document.createElement('span');
+        sep.style.color = 'var(--text-2)';
+        sep.textContent = ' / ';
+        bc.appendChild(sep);
+
+        var crumb = document.createElement('a');
+        crumb.href = 'javascript:void(0)';
+        crumb.textContent = part;
+        crumb.style.textDecoration = 'none';
+        var thisPath = accum;
+        if (idx === parts.length - 1) {
+            crumb.style.color = 'var(--text-1)';
+            crumb.style.fontWeight = '600';
+        } else {
+            crumb.style.color = '#38bdf8';
+            crumb.onclick = function () { fpLoadDirectory(thisPath); };
+        }
+        bc.appendChild(crumb);
+    });
+}
+
+function fpGoUp() {
+    if (!fpCurrentPath) return;
+    var parts = fpCurrentPath.split('/').filter(Boolean);
+    parts.pop();
+    fpLoadDirectory(parts.join('/'));
+}
+
+function fpRefresh() {
+    fpLoadDirectory(fpCurrentPath);
+}
+
+function fpSetSelected(path, rowEl) {
+    fpSelectedPath = path;
+    var disp = document.getElementById('fpSelectedDisplay');
+    if (disp) disp.textContent = path;
+
+    var rows = document.querySelectorAll('#fpFolderListBody tr');
+    rows.forEach(function (r) { r.style.background = ''; });
+    if (rowEl) rowEl.style.background = 'rgba(56, 189, 248, 0.12)';
+}
+
+function fpQuickPick(path) {
+    fpSelectedPath = path;
+    fpConfirmSelection();
+}
+
+function fpUseCurrentFolder() {
+    fpSelectedPath = '/www/wwwroot' + (fpCurrentPath ? '/' + fpCurrentPath : '');
+    fpConfirmSelection();
+}
+
+function fpConfirmSelection() {
+    var docInput = document.getElementById('siteDocroot');
+    if (docInput) {
+        docInput.value = fpSelectedPath;
+        docInput.dataset.manual = '1';
+    }
+    closeFolderPickerModal();
+    Almusa.toast('Document root dipilih: ' + fpSelectedPath, 'success');
+}
+
+async function fpNewFolder() {
+    var fullCur = '/www/wwwroot' + (fpCurrentPath ? '/' + fpCurrentPath : '');
+    var name = await Almusa.prompt({
+        title: 'Buat Folder Baru',
+        message: 'Masukkan nama folder baru di dalam ' + fullCur,
+        placeholder: 'nama-proyek-anda',
+        label: 'Nama Folder'
+    });
+    if (!name || !name.trim()) return;
+    name = name.trim();
+
+    try {
+        var data = await Almusa.post('/api/files/create', {
+            site_id: 0,
+            type: 'dir',
+            name: name,
+            path: fpCurrentPath
+        });
+        if (data.success) {
+            Almusa.toast('Folder "' + name + '" berhasil dibuat.', 'success');
+            await fpLoadDirectory(fpCurrentPath);
+            var newFullPath = '/www/wwwroot/' + (fpCurrentPath ? fpCurrentPath + '/' : '') + name;
+            fpSelectedPath = newFullPath;
+            var disp = document.getElementById('fpSelectedDisplay');
+            if (disp) disp.textContent = newFullPath;
+        } else {
+            Almusa.toast(data.error || 'Gagal membuat folder.', 'error');
+        }
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan jaringan.', 'error');
+    }
+}
+
+// Auto sync domain input to document root unless manually chosen/typed
+document.addEventListener('DOMContentLoaded', function () {
+    var domInput = document.getElementById('siteDomain');
+    var docInput = document.getElementById('siteDocroot');
+    if (domInput && docInput) {
+        domInput.addEventListener('input', function () {
+            if (!docInput.dataset.manual) {
+                var val = this.value.trim().toLowerCase().replace(/[^a-z0-9.-]/g, '');
+                docInput.value = val ? ('/www/wwwroot/' + val) : '';
+            }
+        });
+        docInput.addEventListener('input', function () {
+            if (this.value.trim() === '') {
+                delete this.dataset.manual;
+            } else {
+                this.dataset.manual = '1';
+            }
+        });
+    }
+});
+
 </script>
