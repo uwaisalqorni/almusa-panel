@@ -65,6 +65,69 @@ cleanup_broken_php_sources() {
     return $cleaned
 }
 
+# Configure APT Pinning so Ondrej's multi-PHP php-common & modules take precedence
+# over Ubuntu/Debian's restrictive single-version php-common package
+configure_apt_pinning() {
+    local target_suite="${1:-}"
+    local host_codename="${2:-}"
+
+    mkdir -p /etc/apt/preferences.d
+    cat << 'EOF' > /etc/apt/preferences.d/99-ondrej-php
+Package: php* libapache2-mod-php*
+Pin: release o=LP-PPA-ondrej-php
+Pin-Priority: 1001
+
+Package: php* libapache2-mod-php*
+Pin: origin "ppa.launchpadcontent.net"
+Pin-Priority: 1001
+
+Package: php* libapache2-mod-php*
+Pin: origin "packages.sury.org"
+Pin-Priority: 1001
+EOF
+
+    if [ -n "$target_suite" ] && [ -n "$host_codename" ] && [ "$target_suite" != "$host_codename" ]; then
+        cat << EOF >> /etc/apt/preferences.d/99-ondrej-php
+
+Package: *
+Pin: release o=Ubuntu,n=${target_suite}*
+Pin-Priority: 400
+EOF
+    fi
+
+    chmod 0644 /etc/apt/preferences.d/99-ondrej-php
+}
+
+# Ensure Ubuntu base LTS main & universe repositories are available for shared libraries
+# required by ppa:ondrej/php (e.g. libxml2, libicu74, libzip4t64, libonig5, libldap-2.5-0)
+ensure_ubuntu_compat_libs_repo() {
+    local target_suite="$1"
+    local host_codename="$2"
+
+    local arch
+    arch=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+    local ubu_mirror="http://archive.ubuntu.com/ubuntu"
+    local ubu_sec="http://security.ubuntu.com/ubuntu"
+    if [ "$arch" != "amd64" ] && [ "$arch" != "i386" ]; then
+        ubu_mirror="http://ports.ubuntu.com/ubuntu-ports"
+        ubu_sec="http://ports.ubuntu.com/ubuntu-ports"
+    fi
+
+    local signed_by_opt=""
+    if [ -s /usr/share/keyrings/ubuntu-archive-keyring.gpg ]; then
+        signed_by_opt="[signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] "
+    fi
+
+    echo "[INFO] Enabling Ubuntu '${target_suite}' (main & universe) shared library repository..."
+    cat << EOF > "/etc/apt/sources.list.d/ubuntu-${target_suite}-compat.list"
+deb ${signed_by_opt}${ubu_mirror} ${target_suite} main universe
+deb ${signed_by_opt}${ubu_mirror} ${target_suite}-updates main universe
+deb ${signed_by_opt}${ubu_sec} ${target_suite}-security main universe
+EOF
+    chmod 0644 "/etc/apt/sources.list.d/ubuntu-${target_suite}-compat.list"
+    configure_apt_pinning "$target_suite" "$host_codename"
+}
+
 # Import a GPG key by hex fingerprint/ID over HTTPS (port 443) with HKP fallback
 import_ubuntu_key() {
     local key_id="$1"
@@ -92,12 +155,17 @@ import_ubuntu_key() {
 ensure_php_repo() {
     cleanup_broken_php_sources || true
 
-    # Check if target PHP version packages already have a valid installation candidate
-    if [ "${FORCE_REPO_SETUP:-0}" != "1" ] && has_pkg_candidate "php${VERSION}-fpm" && has_pkg_candidate "php${VERSION}-common"; then
+    # Only skip repository setup if PHP packages, APT preferences pinning, AND base shared libraries are all available
+    if [ "${FORCE_REPO_SETUP:-0}" != "1" ] \
+       && [ -f /etc/apt/preferences.d/99-ondrej-php ] \
+       && has_pkg_candidate "php${VERSION}-fpm" \
+       && has_pkg_candidate "php${VERSION}-common" \
+       && has_pkg_candidate "libxml2" \
+       && has_pkg_candidate "libzip4t64"; then
         return 0
     fi
 
-    echo "[INFO] PHP ${VERSION} packages not available in current APT cache. Configuring Ondrej Sury PHP repository..."
+    echo "[INFO] Configuring Ondrej Sury PHP repository & required runtime libraries for PHP ${VERSION}..."
 
     DISTRO_ID="ubuntu"
     CODENAME=""
@@ -136,6 +204,9 @@ ensure_php_repo() {
             esac
             echo "[INFO] Ubuntu suite '${CODENAME}' does not have a dedicated PPA build; using LTS suite '${TARGET_SUITE}'."
         fi
+
+        # Configure APT pinning & compatibility library repository for target LTS suite
+        ensure_ubuntu_compat_libs_repo "$TARGET_SUITE" "$CODENAME"
 
         echo "[INFO] Fetching official Launchpad GPG signing keys for ppa:ondrej/php..."
         KEYRING_FILE="/usr/share/keyrings/ondrej-ubuntu-php.gpg"
@@ -187,6 +258,7 @@ ensure_php_repo() {
         # Debian: packages.sury.org
         rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php-fallback.sources \
               /etc/apt/sources.list.d/*ondrej* 2>/dev/null || true
+        configure_apt_pinning "$CODENAME" "$CODENAME"
         KEYRING_FILE="/usr/share/keyrings/debsuryorg-archive-keyring.gpg"
         echo "[INFO] Downloading Debian Sury PHP archive keyring..."
         curl -fsSL --connect-timeout 15 https://packages.sury.org/php/apt.gpg -o "$KEYRING_FILE"
@@ -226,7 +298,7 @@ case "$ACTION" in
         echo "[INFO] Ensuring PHP ${VERSION} repository is available..."
         ensure_php_repo
 
-        if ! has_pkg_candidate "php${VERSION}-fpm"; then
+        if ! has_pkg_candidate "php${VERSION}-fpm" || ! has_pkg_candidate "libxml2"; then
             echo "[INFO] Forcing full repository re-synchronization for PHP ${VERSION}..."
             FORCE_REPO_SETUP=1 ensure_php_repo
         fi
@@ -237,9 +309,9 @@ case "$ACTION" in
             exit 1
         fi
 
-        # Collect available core & common extensions for this PHP version
-        PKGS_TO_INSTALL=("php${VERSION}-fpm" "php${VERSION}-cli" "php${VERSION}-common")
-        CORE_EXTS=("mysql" "pgsql" "sqlite3" "curl" "mbstring" "xml" "zip" "bcmath" "gd" "intl" "opcache")
+        # Include php-common explicitly so APT upgrades/replaces distro php-common with Ondrej's multi-PHP php-common
+        PKGS_TO_INSTALL=("php-common" "php${VERSION}-common" "php${VERSION}-cli" "php${VERSION}-fpm")
+        CORE_EXTS=("json" "readline" "opcache" "mysql" "pgsql" "sqlite3" "curl" "mbstring" "xml" "zip" "bcmath" "gd" "intl")
 
         for ext in "${CORE_EXTS[@]}"; do
             if has_pkg_candidate "php${VERSION}-${ext}"; then
@@ -249,10 +321,27 @@ case "$ACTION" in
 
         echo "[INFO] Installing PHP ${VERSION} and extensions: ${PKGS_TO_INSTALL[*]}..."
         wait_for_apt_lock
-        DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades \
             -o Dpkg::Options::="--force-confdef" \
             -o Dpkg::Options::="--force-confold" \
-            "${PKGS_TO_INSTALL[@]}"
+            "${PKGS_TO_INSTALL[@]}"; then
+
+            echo "[WARNING] Combined package installation encountered a dependency conflict. Running resilient staged install..."
+            wait_for_apt_lock
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades \
+                -o Dpkg::Options::="--force-confdef" \
+                -o Dpkg::Options::="--force-confold" \
+                php-common "php${VERSION}-common" "php${VERSION}-cli" "php${VERSION}-fpm"
+
+            for ext in "${CORE_EXTS[@]}"; do
+                if has_pkg_candidate "php${VERSION}-${ext}"; then
+                    DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades \
+                        -o Dpkg::Options::="--force-confdef" \
+                        -o Dpkg::Options::="--force-confold" \
+                        "php${VERSION}-${ext}" || echo "[WARNING] Optional extension php${VERSION}-${ext} skipped."
+                fi
+            done
+        fi
 
         # Ensure /run/php runtime socket directory exists with correct permissions
         mkdir -p /run/php
@@ -287,10 +376,10 @@ case "$ACTION" in
         echo "[INFO] Patching and updating PHP $VERSION against CVE-2026-109618 / CVE-2026-109619..."
         ensure_php_repo
         wait_for_apt_lock
-        DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y \
+        DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y --allow-downgrades \
             -o Dpkg::Options::="--force-confdef" \
             -o Dpkg::Options::="--force-confold" \
-            "php${VERSION}-*"
+            php-common "php${VERSION}-*"
         systemctl reload "php${VERSION}-fpm" || systemctl restart "php${VERSION}-fpm"
         clear_panel_service_cache
         echo "[SUCCESS] PHP $VERSION successfully patched and reloaded!"
