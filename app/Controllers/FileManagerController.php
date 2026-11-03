@@ -10,6 +10,7 @@ class FileManagerController
 {
     /**
      * Resolves the site record and its base file management directory.
+     * If no sites are registered or siteId === 0, defaults to /www/wwwroot.
      *
      * @return array{0: array, 1: string, 2: array} [site, baseDir, allSites]
      */
@@ -18,32 +19,54 @@ class FileManagerController
         $pdo = Database::getInstance();
         $allSites = $pdo->query("SELECT id, domain, docroot, php_version, rewrite_template, status FROM sites ORDER BY id DESC")->fetchAll();
 
-        if (empty($allSites)) {
-            Response::error(404, 'Belum ada website yang terdaftar. Buat website terlebih dahulu di menu Websites.');
+        // Default storage fallback (/www/wwwroot)
+        $defaultStorage = [
+            'id'               => 0,
+            'domain'           => 'Folder Utama (/www/wwwroot)',
+            'docroot'          => '/www/wwwroot',
+            'php_version'      => '8.3',
+            'rewrite_template' => 'default',
+            'status'           => 'active',
+            'is_root_storage'  => true,
+        ];
+
+        if (!is_dir('/www/wwwroot')) {
+            @mkdir('/www/wwwroot', 0755, true);
         }
 
-        $site = null;
-        if ($siteId !== null && $siteId > 0) {
-            foreach ($allSites as $s) {
-                if ((int)$s['id'] === $siteId) {
-                    $site = $s;
-                    break;
+        if (empty($allSites)) {
+            $allSites = [$defaultStorage];
+            $site = $defaultStorage;
+            $baseDir = '/www/wwwroot';
+        } else {
+            $site = null;
+            if ($siteId === 0) {
+                $site = $defaultStorage;
+                $baseDir = '/www/wwwroot';
+            } elseif ($siteId !== null && $siteId > 0) {
+                foreach ($allSites as $s) {
+                    if ((int)$s['id'] === $siteId) {
+                        $site = $s;
+                        break;
+                    }
                 }
             }
-        }
 
-        if (!$site) {
-            $site = $allSites[0];
-        }
+            if (!$site) {
+                $site = $allSites[0];
+            }
 
-        $docroot = $site['docroot'] ?: ("/www/wwwroot/" . $site['domain']);
-
-        // Determine base directory: if docroot ends with /public, use parent project folder so .env and app are accessible
-        $baseDir = $docroot;
-        if (preg_match('#/public/?$#i', $docroot)) {
-            $parent = dirname($docroot);
-            if (is_dir($parent)) {
-                $baseDir = $parent;
+            if (!empty($site['is_root_storage'])) {
+                $baseDir = '/www/wwwroot';
+            } else {
+                $docroot = $site['docroot'] ?: ("/www/wwwroot/" . $site['domain']);
+                $baseDir = $docroot;
+                if (preg_match('#/public/?$#i', $docroot)) {
+                    $parent = dirname($docroot);
+                    if (is_dir($parent)) {
+                        $baseDir = $parent;
+                    }
+                }
             }
         }
 
@@ -114,10 +137,10 @@ class FileManagerController
             return number_format($bytes / 1073741824, 2) . ' GB';
         }
         if ($bytes >= 1048576) {
-            return number_format($bytes / 1048576, 1) . ' MB';
+            return number_format($bytes / 1048576, 2) . ' MB';
         }
         if ($bytes >= 1024) {
-            return number_format($bytes / 1024, 1) . ' KB';
+            return number_format($bytes / 1024, 2) . ' KB';
         }
         return $bytes . ' B';
     }
@@ -138,12 +161,12 @@ class FileManagerController
         if (in_array($ext, ['json', 'lock'])) return 'json';
         if (in_array($ext, ['css', 'scss', 'sass', 'less'])) return 'css';
         if (in_array($ext, ['html', 'htm', 'blade.php'])) return 'html';
-        if (in_array($ext, ['sh', 'bash'])) return 'shell';
-        if (in_array($ext, ['yml', 'yaml'])) return 'yaml';
+        if (in_array($ext, ['sh', 'bash'])) return 'bash';
         if (in_array($ext, ['sql'])) return 'sql';
-        if (in_array($ext, ['md', 'markdown'])) return 'markdown';
         if (in_array($ext, ['xml', 'svg'])) return 'xml';
-        if (in_array($ext, ['ini'])) return 'ini';
+        if (in_array($ext, ['yaml', 'yml'])) return 'yaml';
+        if (in_array($ext, ['md', 'markdown'])) return 'markdown';
+        if (in_array($ext, ['log', 'txt'])) return 'text';
 
         return 'text';
     }
@@ -177,11 +200,11 @@ class FileManagerController
         $siteId = isset($_GET['site_id']) ? (int)$_GET['site_id'] : null;
         [$site, $baseDir, $allSites] = $this->getSiteContext($siteId);
 
-        $initialPath = trim($_GET['path'] ?? '/', '/');
-        $openEdit = trim($_GET['edit'] ?? '');
+        $initialPath = trim((string)($_GET['path'] ?? '/'), '/');
+        $openEdit = trim((string)($_GET['edit'] ?? ''));
 
         Response::view('sites/files', [
-            'title'        => 'File Manager · ' . $site['domain'],
+            'title'        => 'File Manager · ' . ($site['domain'] ?? 'wwwroot'),
             'user'         => Auth::user(),
             'site'         => $site,
             'allSites'     => $allSites,
@@ -192,14 +215,14 @@ class FileManagerController
     }
 
     /**
-     * API: List directory contents.
+     * API: List directory contents with owner, permissions, and disk usage statistics.
      */
     public function listFiles(): void
     {
-        $siteId = (int)($_GET['site_id'] ?? 0);
+        $siteId = isset($_GET['site_id']) ? (int)$_GET['site_id'] : null;
         [$site, $baseDir] = $this->getSiteContext($siteId);
 
-        $relPath = trim($_GET['path'] ?? '', '/');
+        $relPath = trim((string)($_GET['path'] ?? ''), '/');
         $targetDir = $this->resolveSafePath($baseDir, $relPath);
 
         if ($targetDir === null || !is_dir($targetDir)) {
@@ -221,6 +244,7 @@ class FileManagerController
         // Read items
         $files = [];
         $dirs = [];
+        $totalBytes = 0;
         $handle = @opendir($targetDir);
         if ($handle) {
             while (($entry = readdir($handle)) !== false) {
@@ -233,15 +257,32 @@ class FileManagerController
                 $relItem = ($relPath === '' ? '' : ($relPath . '/')) . $entry;
                 $stat = @stat($full);
 
+                $sizeBytes = $isDir ? 0 : ($stat['size'] ?? 0);
+                if (!$isDir) {
+                    $totalBytes += $sizeBytes;
+                }
+
+                $owner = 'www-data';
+                if (isset($stat['uid'])) {
+                    if (function_exists('posix_getpwuid')) {
+                        $pw = @posix_getpwuid($stat['uid']);
+                        $owner = $pw['name'] ?? (string)$stat['uid'];
+                    } else {
+                        $owner = $stat['uid'] === 0 ? 'root' : ($stat['uid'] === 33 ? 'www-data' : (string)$stat['uid']);
+                    }
+                }
+
                 $item = [
                     'name'        => $entry,
                     'path'        => $relItem,
                     'is_dir'      => $isDir,
-                    'size_bytes'  => $isDir ? 0 : ($stat['size'] ?? 0),
-                    'size'        => $isDir ? '—' : $this->formatSize($stat['size'] ?? 0),
+                    'size_bytes'  => $sizeBytes,
+                    'size'        => $isDir ? '—' : $this->formatSize($sizeBytes),
                     'mtime'       => $stat['mtime'] ?? 0,
-                    'mtime_fmt'   => date('Y-m-d H:i', $stat['mtime'] ?? time()),
+                    'mtime_fmt'   => date('Y-m-d H:i:s', $stat['mtime'] ?? time()),
                     'perms'       => substr(sprintf('%o', $stat['mode'] ?? 0), -4),
+                    'perms_num'   => substr(sprintf('%o', $stat['mode'] ?? 0), -3),
+                    'owner'       => $owner,
                     'is_editable' => !$isDir && $this->isEditable($entry),
                     'is_archive'  => !$isDir && strtolower(pathinfo($entry, PATHINFO_EXTENSION)) === 'zip',
                     'syntax'      => !$isDir ? $this->detectSyntax($entry) : null,
@@ -268,6 +309,9 @@ class FileManagerController
             }
         }
 
+        $diskFree = @disk_free_space($baseDir) ?: 0;
+        $diskTotal = @disk_total_space($baseDir) ?: 0;
+
         Response::json([
             'success'      => true,
             'site'         => [
@@ -279,6 +323,14 @@ class FileManagerController
             'parent_path'  => $parentPath,
             'breadcrumbs'  => $crumbs,
             'items'        => array_merge($dirs, $files),
+            'stats'        => [
+                'dir_count'      => count($dirs),
+                'file_count'     => count($files),
+                'total_bytes'    => $totalBytes,
+                'total_size_fmt' => $this->formatSize($totalBytes),
+                'disk_free_fmt'  => $this->formatSize($diskFree),
+                'disk_total_fmt' => $this->formatSize($diskTotal),
+            ],
         ]);
     }
 
@@ -298,28 +350,26 @@ class FileManagerController
             }
             $content = @file_get_contents($confPath);
             Response::json([
-                'success'     => true,
-                'name'        => "nginx.conf ({$site['domain']})",
-                'path'        => $confPath,
-                'is_nginx'    => true,
-                'content'     => $content !== false ? $content : '',
-                'size'        => strlen((string)$content),
-                'syntax'      => 'nginx',
-                'is_writable' => true,
+                'success'  => true,
+                'filename' => "{$site['domain']}.conf",
+                'path'     => $confPath,
+                'content'  => $content !== false ? $content : '',
+                'size'     => strlen((string)$content),
+                'syntax'   => 'nginx',
+                'is_nginx' => true,
             ]);
             return;
         }
 
-        $relFile = trim($_GET['file'] ?? '', '/');
+        $relFile = trim((string)($_GET['file'] ?? ''), '/');
         $fullPath = $this->resolveSafePath($baseDir, $relFile);
 
         if ($fullPath === null || !file_exists($fullPath) || is_dir($fullPath)) {
             Response::json(['success' => false, 'error' => 'File tidak ditemukan atau akses ditolak.'], 404);
         }
 
-        $size = filesize($fullPath);
-        if ($size > 2 * 1024 * 1024) {
-            Response::json(['success' => false, 'error' => 'Ukuran file terlalu besar untuk dibuka di editor teks web (maksimal 2 MB).'], 400);
+        if (filesize($fullPath) > 5242880) { // 5MB limit for web editor
+            Response::json(['success' => false, 'error' => 'File terlalu besar untuk dibuka di editor teks web (maksimal 5 MB).'], 400);
         }
 
         $content = @file_get_contents($fullPath);
@@ -328,14 +378,13 @@ class FileManagerController
         }
 
         Response::json([
-            'success'     => true,
-            'name'        => basename($fullPath),
-            'path'        => $relFile,
-            'is_nginx'    => false,
-            'content'     => $content,
-            'size'        => $size,
-            'syntax'      => $this->detectSyntax($fullPath),
-            'is_writable' => is_writable($fullPath) || is_writable(dirname($fullPath)),
+            'success'  => true,
+            'filename' => basename($fullPath),
+            'path'     => $relFile,
+            'content'  => $content,
+            'size'     => strlen($content),
+            'syntax'   => $this->detectSyntax(basename($fullPath)),
+            'is_nginx' => false,
         ]);
     }
 
@@ -345,12 +394,11 @@ class FileManagerController
     public function saveFile(): void
     {
         $siteId = (int)($_POST['site_id'] ?? 0);
-        $isNginx = !empty($_POST['is_nginx']);
         $content = (string)($_POST['content'] ?? '');
+        $isNginx = !empty($_POST['is_nginx']);
         [$site, $baseDir] = $this->getSiteContext($siteId);
 
         if ($isNginx) {
-            // Save Nginx configuration safely with syntax test & reload
             $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)$site['domain']);
             $tmpFile = "/tmp/almusa_nginx_save_{$domain}_" . time() . ".conf";
             if (@file_put_contents($tmpFile, $content) === false) {
@@ -379,7 +427,7 @@ class FileManagerController
             return;
         }
 
-        $relFile = trim($_POST['file'] ?? '', '/');
+        $relFile = trim((string)($_POST['file'] ?? ''), '/');
         $fullPath = $this->resolveSafePath($baseDir, $relFile);
 
         if ($fullPath === null) {
@@ -410,12 +458,11 @@ class FileManagerController
     public function createItem(): void
     {
         $siteId = (int)($_POST['site_id'] ?? 0);
-        $type = trim($_POST['type'] ?? 'file'); // 'file' or 'dir'
-        $name = trim($_POST['name'] ?? '');
-        $relPath = trim($_POST['path'] ?? '', '/');
+        $type = trim((string)($_POST['type'] ?? 'file')); // 'file' or 'dir'
+        $name = trim((string)($_POST['name'] ?? ''));
+        $relPath = trim((string)($_POST['path'] ?? ''), '/');
         [$site, $baseDir] = $this->getSiteContext($siteId);
 
-        // Sanitize name: cannot contain slashes or null bytes
         if (empty($name) || str_contains($name, '/') || str_contains($name, '\\') || str_contains($name, "\0")) {
             Response::json(['success' => false, 'error' => 'Nama file atau folder tidak valid.'], 400);
         }
@@ -453,7 +500,7 @@ class FileManagerController
     public function deleteItem(): void
     {
         $siteId = (int)($_POST['site_id'] ?? 0);
-        $relPath = trim($_POST['path'] ?? '', '/');
+        $relPath = trim((string)($_POST['path'] ?? ''), '/');
         [$site, $baseDir] = $this->getSiteContext($siteId);
 
         if (empty($relPath)) {
@@ -483,24 +530,322 @@ class FileManagerController
     }
 
     /**
-     * Helper to recursively delete directory contents.
+     * API: Rename file or directory.
      */
-    private function recursiveRmdir(string $dir): void
+    public function renameItem(): void
     {
-        if (!is_dir($dir)) return;
-        $items = scandir($dir);
-        if ($items === false) return;
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $oldRel = trim((string)($_POST['path'] ?? ''), '/');
+        $newName = basename(trim((string)($_POST['new_name'] ?? '')));
+        [$site, $baseDir] = $this->getSiteContext($siteId);
 
-        foreach ($items as $item) {
-            if ($item === '.' || $item === '..') continue;
-            $path = $dir . '/' . $item;
-            if (is_dir($path)) {
-                $this->recursiveRmdir($path);
-            } else {
-                @unlink($path);
+        if ($oldRel === '') {
+            Response::json(['success' => false, 'error' => 'Root direktori tidak dapat diubah namanya.'], 400);
+        }
+
+        if ($newName === '' || $newName === '.' || $newName === '..' || str_contains($newName, '/') || str_contains($newName, '\\')) {
+            Response::json(['success' => false, 'error' => 'Nama baru tidak valid.'], 400);
+        }
+
+        $oldPath = $this->resolveSafePath($baseDir, $oldRel);
+        if ($oldPath === null || !file_exists($oldPath)) {
+            Response::json(['success' => false, 'error' => 'Berkas asal tidak ditemukan.'], 404);
+        }
+
+        $parent = dirname($oldPath);
+        $newPath = $parent . '/' . $newName;
+
+        if (file_exists($newPath)) {
+            Response::json(['success' => false, 'error' => "Nama '{$newName}' sudah digunakan di folder ini."], 400);
+        }
+
+        if (!@rename($oldPath, $newPath)) {
+            Response::json(['success' => false, 'error' => 'Gagal mengubah nama. Periksa hak akses file/folder.'], 500);
+        }
+
+        Response::json([
+            'success'  => true,
+            'message'  => "Berhasil mengubah nama menjadi '{$newName}'.",
+            'new_name' => $newName,
+        ]);
+    }
+
+    /**
+     * API: Change permissions (chmod) for file or directory.
+     */
+    public function chmodItem(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $relPath = trim((string)($_POST['path'] ?? ''), '/');
+        $perms = trim((string)($_POST['perms'] ?? ''));
+        $recursive = !empty($_POST['recursive']);
+        [$site, $baseDir] = $this->getSiteContext($siteId);
+
+        if (!preg_match('/^0?[1-7][0-7]{2}$/', $perms)) {
+            Response::json(['success' => false, 'error' => 'Format izin hak akses tidak valid. Contoh: 755 atau 644.'], 400);
+        }
+
+        $target = $this->resolveSafePath($baseDir, $relPath);
+        if ($target === null || !file_exists($target)) {
+            Response::json(['success' => false, 'error' => 'File atau folder tidak ditemukan.'], 404);
+        }
+
+        $octal = octdec($perms);
+
+        if ($recursive && is_dir($target)) {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($target, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::SELF_FIRST
+            );
+            foreach ($iterator as $item) {
+                if ($item->isDir()) {
+                    @chmod($item->getPathname(), $octal);
+                } else {
+                    @chmod($item->getPathname(), $octal === 0777 ? 0777 : ($item->isExecutable() ? $octal : 0644));
+                }
+            }
+            @chmod($target, $octal);
+        } else {
+            if (!@chmod($target, $octal)) {
+                $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)$site['domain']);
+                $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
+                if (is_file($script)) {
+                    @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain) . " " . escapeshellarg($target) . " 2>&1");
+                }
             }
         }
-        @rmdir($dir);
+
+        Response::json([
+            'success' => true,
+            'message' => "Izin berkas berhasil diubah menjadi {$perms}" . ($recursive ? ' (rekursif).' : '.'),
+        ]);
+    }
+
+    /**
+     * API: Copy file or folder.
+     */
+    public function copyItem(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $srcRel = trim((string)($_POST['source'] ?? ''), '/');
+        $destRel = trim((string)($_POST['destination'] ?? ''), '/');
+        [$site, $baseDir] = $this->getSiteContext($siteId);
+
+        $srcPath = $this->resolveSafePath($baseDir, $srcRel);
+        if ($srcPath === null || !file_exists($srcPath)) {
+            Response::json(['success' => false, 'error' => 'Berkas asal tidak ditemukan.'], 404);
+        }
+
+        $targetDir = $this->resolveSafePath($baseDir, $destRel);
+        if ($targetDir === null || !is_dir($targetDir)) {
+            Response::json(['success' => false, 'error' => 'Direktori tujuan tidak valid.'], 400);
+        }
+
+        $baseName = basename($srcPath);
+        $destPath = $targetDir . '/' . $baseName;
+
+        if (file_exists($destPath)) {
+            $ext = pathinfo($baseName, PATHINFO_EXTENSION);
+            $nameWithoutExt = pathinfo($baseName, PATHINFO_FILENAME);
+            $suffix = '_copy_' . time();
+            $destPath = is_dir($srcPath)
+                ? ($targetDir . '/' . $baseName . $suffix)
+                : ($targetDir . '/' . $nameWithoutExt . $suffix . ($ext ? ('.' . $ext) : ''));
+        }
+
+        if (is_dir($srcPath)) {
+            $this->recursiveCopy($srcPath, $destPath);
+        } else {
+            if (!@copy($srcPath, $destPath)) {
+                Response::json(['success' => false, 'error' => 'Gagal menyalin file.'], 500);
+            }
+            @chmod($destPath, 0644);
+        }
+
+        Response::json([
+            'success' => true,
+            'message' => "Berhasil menyalin '" . basename($srcPath) . "'.",
+        ]);
+    }
+
+    /**
+     * API: Move/Cut file or folder.
+     */
+    public function moveItem(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $srcRel = trim((string)($_POST['source'] ?? ''), '/');
+        $destRel = trim((string)($_POST['destination'] ?? ''), '/');
+        [$site, $baseDir] = $this->getSiteContext($siteId);
+
+        $srcPath = $this->resolveSafePath($baseDir, $srcRel);
+        if ($srcPath === null || !file_exists($srcPath)) {
+            Response::json(['success' => false, 'error' => 'Berkas asal tidak ditemukan.'], 404);
+        }
+
+        $targetDir = $this->resolveSafePath($baseDir, $destRel);
+        if ($targetDir === null || !is_dir($targetDir)) {
+            Response::json(['success' => false, 'error' => 'Direktori tujuan tidak valid.'], 400);
+        }
+
+        if (is_dir($srcPath) && str_starts_with($targetDir . '/', $srcPath . '/')) {
+            Response::json(['success' => false, 'error' => 'Tidak dapat memindahkan folder ke dalam dirinya sendiri.'], 400);
+        }
+
+        $baseName = basename($srcPath);
+        $destPath = $targetDir . '/' . $baseName;
+
+        if (file_exists($destPath)) {
+            Response::json(['success' => false, 'error' => "Nama '{$baseName}' sudah ada di direktori tujuan."], 400);
+        }
+
+        if (!@rename($srcPath, $destPath)) {
+            Response::json(['success' => false, 'error' => 'Gagal memindahkan file/folder.'], 500);
+        }
+
+        Response::json([
+            'success' => true,
+            'message' => "Berhasil memindahkan '{$baseName}'.",
+        ]);
+    }
+
+    /**
+     * API: Compress file or folder into .zip archive.
+     */
+    public function compressZip(): void
+    {
+        @set_time_limit(600);
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $itemRel = trim((string)($_POST['item'] ?? ''), '/');
+        $zipName = basename(trim((string)($_POST['zip_name'] ?? '')));
+        [$site, $baseDir] = $this->getSiteContext($siteId);
+
+        $sourcePath = $this->resolveSafePath($baseDir, $itemRel);
+        if ($sourcePath === null || !file_exists($sourcePath)) {
+            Response::json(['success' => false, 'error' => 'File atau folder yang akan dikompres tidak ditemukan.'], 404);
+        }
+
+        if ($zipName === '' || !str_ends_with(strtolower($zipName), '.zip')) {
+            $zipName = ($zipName === '' ? basename($sourcePath) : $zipName) . '.zip';
+        }
+
+        $destDir = dirname($sourcePath);
+        $zipPath = $destDir . '/' . $zipName;
+
+        if (file_exists($zipPath)) {
+            @unlink($zipPath);
+        }
+
+        $success = false;
+
+        // Try zip CLI command first
+        $zipBin = trim((string)@shell_exec('command -v zip 2>/dev/null'));
+        if (!empty($zipBin) && is_executable($zipBin)) {
+            $parentDir = dirname($sourcePath);
+            $targetBase = basename($sourcePath);
+            $cmd = "cd " . escapeshellarg($parentDir) . " && " . escapeshellarg($zipBin) . " -r -q " . escapeshellarg($zipPath) . " " . escapeshellarg($targetBase) . " 2>&1";
+            exec($cmd, $out, $ret);
+            if ($ret === 0) {
+                $success = true;
+            }
+        }
+
+        if (!$success && class_exists('ZipArchive')) {
+            $zip = new \ZipArchive();
+            if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
+                if (is_dir($sourcePath)) {
+                    $files = new \RecursiveIteratorIterator(
+                        new \RecursiveDirectoryIterator($sourcePath, \FilesystemIterator::SKIP_DOTS),
+                        \RecursiveIteratorIterator::LEAVES_ONLY
+                    );
+                    foreach ($files as $file) {
+                        if (!$file->isDir()) {
+                            $filePath = $file->getRealPath();
+                            $rel = substr($filePath, strlen(dirname($sourcePath)) + 1);
+                            $zip->addFile($filePath, str_replace('\\', '/', $rel));
+                        }
+                    }
+                } else {
+                    $zip->addFile($sourcePath, basename($sourcePath));
+                }
+                $zip->close();
+                $success = true;
+            }
+        }
+
+        if (!$success) {
+            Response::json(['success' => false, 'error' => 'Gagal membuat file arsip zip.'], 500);
+        }
+
+        @chmod($zipPath, 0644);
+
+        Response::json([
+            'success'  => true,
+            'message'  => "Arsip '{$zipName}' berhasil dibuat.",
+            'zip_file' => $zipName,
+        ]);
+    }
+
+    /**
+     * API: Batch action on multiple items.
+     */
+    public function batchAction(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+        $action = trim((string)($_POST['action'] ?? ''));
+        $items = (array)($_POST['items'] ?? []);
+        $destRel = trim((string)($_POST['destination'] ?? ''), '/');
+        $perms = trim((string)($_POST['perms'] ?? ''));
+        [$site, $baseDir] = $this->getSiteContext($siteId);
+
+        if (empty($items)) {
+            Response::json(['success' => false, 'error' => 'Tidak ada item yang dipilih.'], 400);
+        }
+
+        $processed = 0;
+        $targetDir = !empty($destRel) ? $this->resolveSafePath($baseDir, $destRel) : null;
+
+        foreach ($items as $rel) {
+            $path = $this->resolveSafePath($baseDir, trim((string)$rel, '/'));
+            if ($path === null || !file_exists($path)) continue;
+
+            if ($action === 'delete') {
+                if (is_dir($path)) {
+                    $this->recursiveRmdir($path);
+                } else {
+                    @unlink($path);
+                }
+                $processed++;
+            } elseif ($action === 'copy' && $targetDir && is_dir($targetDir)) {
+                $destPath = $targetDir . '/' . basename($path);
+                if (file_exists($destPath)) {
+                    $destPath = $targetDir . '/' . basename($path) . '_copy_' . time();
+                }
+                if (is_dir($path)) {
+                    $this->recursiveCopy($path, $destPath);
+                } else {
+                    @copy($path, $destPath);
+                    @chmod($destPath, 0644);
+                }
+                $processed++;
+            } elseif ($action === 'move' && $targetDir && is_dir($targetDir)) {
+                if (!is_dir($path) || !str_starts_with($targetDir . '/', $path . '/')) {
+                    $destPath = $targetDir . '/' . basename($path);
+                    if (!file_exists($destPath) && @rename($path, $destPath)) {
+                        $processed++;
+                    }
+                }
+            } elseif ($action === 'chmod' && preg_match('/^0?[1-7][0-7]{2}$/', $perms)) {
+                @chmod($path, octdec($perms));
+                $processed++;
+            }
+        }
+
+        Response::json([
+            'success'   => true,
+            'message'   => "{$processed} item berhasil diproses ({$action}).",
+            'processed' => $processed,
+        ]);
     }
 
     /**
@@ -737,7 +1082,6 @@ class FileManagerController
         $extractionError = '';
 
         // ENGINE 1: High-Performance System `unzip` CLI
-        // Native C execution: handles Zip64, large archives (129MB+), and non-standard zip formats without memory bloat
         $unzipBin = '';
         if (function_exists('exec')) {
             $checkUnzip = trim((string)@shell_exec('command -v unzip 2>/dev/null'));
@@ -747,11 +1091,9 @@ class FileManagerController
         }
 
         if (!empty($unzipBin)) {
-            // unzip flags: -q (quiet), -o (overwrite existing files without interactive prompt), -d (destination)
             $cmd = escapeshellarg($unzipBin) . " -q -o " . escapeshellarg($zipPath) . " -d " . escapeshellarg($destDir) . " 2>&1";
             exec($cmd, $cliOutput, $exitCode);
 
-            // Exit code 0 = success, exit code 1 = warnings (e.g. skipped symlink/minor attributes) but files were extracted
             if ($exitCode === 0 || $exitCode === 1) {
                 $extractedSuccess = true;
             } else {
@@ -779,7 +1121,6 @@ class FileManagerController
                     // Granular Zip-Slip check: reject actual directory escape attempts
                     $normalizedEntry = str_replace('\\', '/', $entryName);
                     if (str_starts_with($normalizedEntry, '/') || preg_match('#(^|/)\.\.(/|$)#', $normalizedEntry)) {
-                        // Skip suspicious entry rather than failing the whole archive
                         continue;
                     }
                     $safeFiles[] = $entryName;
@@ -865,7 +1206,7 @@ class FileManagerController
     public function downloadFile(): void
     {
         $siteId = (int)($_GET['site_id'] ?? 0);
-        $relFile = trim($_GET['file'] ?? '', '/');
+        $relFile = trim((string)($_GET['file'] ?? ''), '/');
         [$site, $baseDir] = $this->getSiteContext($siteId);
 
         $fullPath = $this->resolveSafePath($baseDir, $relFile);
@@ -883,5 +1224,49 @@ class FileManagerController
         header('Content-Length: ' . filesize($fullPath));
         readfile($fullPath);
         exit;
+    }
+
+    /**
+     * Helper to recursively delete directory contents.
+     */
+    private function recursiveRmdir(string $dir): void
+    {
+        if (!is_dir($dir)) return;
+        $items = scandir($dir);
+        if ($items === false) return;
+
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') continue;
+            $path = $dir . '/' . $item;
+            if (is_dir($path)) {
+                $this->recursiveRmdir($path);
+            } else {
+                @unlink($path);
+            }
+        }
+        @rmdir($dir);
+    }
+
+    /**
+     * Helper to recursively copy directory contents.
+     */
+    private function recursiveCopy(string $src, string $dest): void
+    {
+        @mkdir($dest, 0755, true);
+        $dir = opendir($src);
+        if ($dir) {
+            while (($file = readdir($dir)) !== false) {
+                if ($file === '.' || $file === '..') continue;
+                $srcFile = $src . '/' . $file;
+                $destFile = $dest . '/' . $file;
+                if (is_dir($srcFile)) {
+                    $this->recursiveCopy($srcFile, $destFile);
+                } else {
+                    @copy($srcFile, $destFile);
+                    @chmod($destFile, 0644);
+                }
+            }
+            closedir($dir);
+        }
     }
 }

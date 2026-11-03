@@ -48,12 +48,19 @@ Router::post('/api/sites/laravel/connect-db', [SiteController::class, 'laravelCo
 Router::post('/api/sites/laravel/artisan', [SiteController::class, 'laravelRunArtisan']);
 
 // File Manager & Config Editor
+Router::get('/files', [FileManagerController::class, 'index']);
 Router::get('/sites/files', [FileManagerController::class, 'index']);
 Router::get('/api/files/list', [FileManagerController::class, 'listFiles']);
 Router::get('/api/files/read', [FileManagerController::class, 'readFile']);
 Router::post('/api/files/save', [FileManagerController::class, 'saveFile']);
 Router::post('/api/files/create', [FileManagerController::class, 'createItem']);
 Router::post('/api/files/delete', [FileManagerController::class, 'deleteItem']);
+Router::post('/api/files/rename', [FileManagerController::class, 'renameItem']);
+Router::post('/api/files/chmod', [FileManagerController::class, 'chmodItem']);
+Router::post('/api/files/copy', [FileManagerController::class, 'copyItem']);
+Router::post('/api/files/move', [FileManagerController::class, 'moveItem']);
+Router::post('/api/files/compress', [FileManagerController::class, 'compressZip']);
+Router::post('/api/files/batch', [FileManagerController::class, 'batchAction']);
 Router::post('/api/files/upload', [FileManagerController::class, 'uploadFile']);
 Router::post('/api/files/extract', [FileManagerController::class, 'extractZip']);
 Router::get('/api/files/download', [FileManagerController::class, 'downloadFile']);
