@@ -454,12 +454,33 @@ var EDITOR_ORIGINAL_CONTENT = '';
 var EDITOR_IS_DIRTY = false;
 var OPEN_EDIT_INITIAL = <?= json_encode((string)$openEdit) ?>;
 
-// Clipboard State for Copy / Cut
-var CLIPBOARD = {
-    action: null, // 'copy' or 'cut'
-    items: [],    // array of relative paths
-    sourceSiteId: CURRENT_SITE_ID
-};
+// Clipboard State for Copy / Cut (persisted in sessionStorage across site switches)
+var CLIPBOARD = (function () {
+    try {
+        var saved = sessionStorage.getItem('almusa_fm_clipboard');
+        if (saved) {
+            var parsed = JSON.parse(saved);
+            if (parsed && parsed.action && Array.isArray(parsed.items) && parsed.items.length > 0) {
+                return parsed;
+            }
+        }
+    } catch (e) {}
+    return {
+        action: null, // 'copy' or 'cut'
+        items: [],    // array of relative paths
+        sourceSiteId: CURRENT_SITE_ID
+    };
+})();
+
+function saveClipboardState() {
+    try {
+        if (CLIPBOARD && CLIPBOARD.action && CLIPBOARD.items && CLIPBOARD.items.length > 0) {
+            sessionStorage.setItem('almusa_fm_clipboard', JSON.stringify(CLIPBOARD));
+        } else {
+            sessionStorage.removeItem('almusa_fm_clipboard');
+        }
+    } catch (e) {}
+}
 
 function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -682,42 +703,85 @@ function renderTable(items) {
         tdActions.style.whiteSpace = 'nowrap';
         tdActions.style.fontSize = '12px';
 
-        var links = [];
+        var actionCount = 0;
+        function appendActionSep() {
+            if (actionCount > 0) {
+                var sep = document.createElement('span');
+                sep.style.color = 'var(--border)';
+                sep.style.margin = '0 4px';
+                sep.textContent = '|';
+                tdActions.appendChild(sep);
+            }
+            actionCount++;
+        }
+
+        function appendActionBtn(label, onClickFn, styleText) {
+            appendActionSep();
+            var a = document.createElement('a');
+            a.href = 'javascript:void(0)';
+            if (styleText) a.style.cssText = styleText;
+            a.textContent = label;
+            a.addEventListener('click', function (ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                onClickFn();
+            });
+            tdActions.appendChild(a);
+        }
 
         // Edit
         if (item.is_editable) {
-            links.push('<a href="javascript:void(0)" onclick="openFileEditor(' + jsArg(item.path) + ')">Edit</a>');
+            appendActionBtn('Edit', function () {
+                openFileEditor(item.path);
+            });
         }
 
         // Copy
-        links.push('<a href="javascript:void(0)" onclick="singleCopy(' + jsArg(item.path) + ')">Salin</a>');
+        appendActionBtn('Salin', function () {
+            singleCopy(item.path);
+        });
 
         // Cut
-        links.push('<a href="javascript:void(0)" onclick="singleCut(' + jsArg(item.path) + ')">Potong</a>');
+        appendActionBtn('Potong', function () {
+            singleCut(item.path);
+        });
 
         // Rename
-        links.push('<a href="javascript:void(0)" onclick="openRenameModal(' + jsArg(item.path) + ', ' + jsArg(item.name) + ')">Rename</a>');
+        appendActionBtn('Rename', function () {
+            openRenameModal(item.path, item.name);
+        });
 
         // Chmod
-        links.push('<a href="javascript:void(0)" onclick="openChmodModal(' + jsArg(item.path) + ', ' + jsArg(item.perms_num || item.perms) + ', ' + (item.is_dir ? 'true' : 'false') + ')">Chmod</a>');
+        appendActionBtn('Chmod', function () {
+            openChmodModal(item.path, item.perms_num || item.perms, !!item.is_dir);
+        });
 
-        // Extract
+        // Extract or Zip
         if (item.is_archive) {
-            links.push('<a href="javascript:void(0)" style="font-weight:600;color:var(--primary, #3b82f6);" onclick="openExtractModal(' + jsArg(item.path) + ', ' + jsArg(item.name) + ')">Ekstrak</a>');
+            appendActionBtn('Ekstrak', function () {
+                openExtractModal(item.path, item.name);
+            }, 'font-weight:600;color:var(--primary, #3b82f6);');
         } else {
-            // Compress
-            links.push('<a href="javascript:void(0)" onclick="openCompressModal(' + jsArg(item.path) + ', ' + jsArg(item.name) + ')">Zip</a>');
+            appendActionBtn('Zip', function () {
+                openCompressModal(item.path, item.name);
+            });
         }
 
         // Download
         if (!item.is_dir) {
-            links.push('<a href="/api/files/download?site_id=' + CURRENT_SITE_ID + '&file=' + encodeURIComponent(item.path) + '" download>Unduh</a>');
+            appendActionSep();
+            var dlLink = document.createElement('a');
+            dlLink.href = '/api/files/download?site_id=' + encodeURIComponent(CURRENT_SITE_ID) + '&file=' + encodeURIComponent(item.path);
+            dlLink.setAttribute('download', item.name);
+            dlLink.textContent = 'Unduh';
+            tdActions.appendChild(dlLink);
         }
 
         // Delete
-        links.push('<a href="javascript:void(0)" style="color:var(--err, #ef4444);" onclick="deleteItem(' + jsArg(item.path) + ', ' + (item.is_dir ? 'true' : 'false') + ')">Hapus</a>');
+        appendActionBtn('Hapus', function () {
+            deleteItem(item.path, !!item.is_dir);
+        }, 'color:var(--err, #ef4444);');
 
-        tdActions.innerHTML = links.join(' <span style="color:var(--border);margin:0 2px;">|</span> ');
         tr.appendChild(tdActions);
 
         tbody.appendChild(tr);
@@ -725,7 +789,7 @@ function renderTable(items) {
 }
 
 function jsArg(str) {
-    return JSON.stringify(String(str));
+    return escapeHtml(JSON.stringify(String(str)));
 }
 
 function filterFiles(query) {
@@ -823,6 +887,7 @@ async function batchAction(action) {
             items: selected,
             sourceSiteId: CURRENT_SITE_ID
         };
+        saveClipboardState();
         updateClipboardBar();
         Almusa.toast(selected.length + ' item dimasukkan ke clipboard (' + (action === 'copy' ? 'Salin' : 'Potong') + '). Navigasikan ke folder tujuan lalu klik Tempel.', 'info');
         deselectAll();
@@ -837,12 +902,14 @@ async function batchAction(action) {
 /* ----------------------------------------------------------- CLIPBOARD (COPY/CUT/PASTE) */
 function singleCopy(path) {
     CLIPBOARD = { action: 'copy', items: [path], sourceSiteId: CURRENT_SITE_ID };
+    saveClipboardState();
     updateClipboardBar();
     Almusa.toast('"' + path.split('/').pop() + '" disalin ke clipboard. Buka folder tujuan lalu klik Tempel.', 'info');
 }
 
 function singleCut(path) {
     CLIPBOARD = { action: 'cut', items: [path], sourceSiteId: CURRENT_SITE_ID };
+    saveClipboardState();
     updateClipboardBar();
     Almusa.toast('"' + path.split('/').pop() + '" dipotong ke clipboard. Buka folder tujuan lalu klik Tempel.', 'info');
 }
@@ -863,6 +930,7 @@ function updateClipboardBar() {
 
 function clearClipboard() {
     CLIPBOARD = { action: null, items: [], sourceSiteId: CURRENT_SITE_ID };
+    saveClipboardState();
     updateClipboardBar();
 }
 
@@ -873,6 +941,7 @@ async function pasteClipboard() {
     try {
         var res = await Almusa.post('/api/files/batch', {
             site_id: CURRENT_SITE_ID,
+            source_site_id: CLIPBOARD.sourceSiteId != null ? CLIPBOARD.sourceSiteId : CURRENT_SITE_ID,
             action: action,
             items: CLIPBOARD.items,
             destination: CURRENT_PATH

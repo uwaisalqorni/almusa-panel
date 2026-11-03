@@ -21,7 +21,7 @@ PHP_VER="${4:-8.3}"
 REWRITE="${5:-default}"
 
 # Strict domain sanitization
-if [ "$ACTION" != "fix_permissions" ] && [ "$ACTION" != "chmod_path" ] && { [ -z "$DOMAIN" ] || ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; }; then
+if [ "$ACTION" != "fix_permissions" ] && [ "$ACTION" != "chmod_path" ] && [ "$ACTION" != "extract_archive" ] && { [ -z "$DOMAIN" ] || ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; }; then
     echo "[ERROR] Invalid domain name: '$DOMAIN'"
     exit 1
 fi
@@ -270,6 +270,60 @@ EOF
             chmod "$PERMS" -- "$SAFE_TARGET"
         fi
         echo "[SUCCESS] Permissions updated to $PERMS for $SAFE_TARGET."
+        ;;
+
+    extract_archive)
+        ARCHIVE_PATH="${3:-}"
+        DEST_PATH="${4:-}"
+        if [ -z "$ARCHIVE_PATH" ] || [ ! -f "$ARCHIVE_PATH" ]; then
+            echo "[ERROR] Archive file '$ARCHIVE_PATH' does not exist."
+            exit 1
+        fi
+        if ! SAFE_ARCHIVE="$(canonical_wwwroot "$ARCHIVE_PATH")"; then
+            echo "[ERROR] Refusing to extract archive outside /www/wwwroot"
+            exit 1
+        fi
+        if [ -z "$DEST_PATH" ]; then
+            DEST_PATH="$(dirname "$SAFE_ARCHIVE")"
+        fi
+        if ! SAFE_DEST="$(canonical_wwwroot "$DEST_PATH")"; then
+            echo "[ERROR] Refusing to extract to destination outside /www/wwwroot"
+            exit 1
+        fi
+        mkdir -p -- "$SAFE_DEST"
+        LOWER_ARC="$(echo "$SAFE_ARCHIVE" | tr '[:upper:]' '[:lower:]')"
+        case "$LOWER_ARC" in
+            *.tar.gz|*.tgz|*.tar)
+                tar -xf "$SAFE_ARCHIVE" -C "$SAFE_DEST"
+                ;;
+            *.zip)
+                if ! command -v unzip >/dev/null 2>&1; then
+                    DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
+                    DEBIAN_FRONTEND=noninteractive apt-get install -y unzip >/dev/null 2>&1 || true
+                fi
+                if command -v unzip >/dev/null 2>&1; then
+                    SET_EXIT=0
+                    unzip -q -o "$SAFE_ARCHIVE" -d "$SAFE_DEST" || SET_EXIT=$?
+                    if [ "$SET_EXIT" -ne 0 ] && [ "$SET_EXIT" -ne 1 ]; then
+                        exit "$SET_EXIT"
+                    fi
+                elif command -v python3 >/dev/null 2>&1; then
+                    python3 -m zipfile -e "$SAFE_ARCHIVE" "$SAFE_DEST"
+                else
+                    echo "[ERROR] Neither unzip nor python3 is available to extract zip archive."
+                    exit 1
+                fi
+                ;;
+            *)
+                echo "[ERROR] Unsupported archive format: $SAFE_ARCHIVE"
+                exit 1
+                ;;
+        esac
+        chown -R www-data:www-data -- "$SAFE_DEST" 2>/dev/null || true
+        find "$SAFE_DEST" -type d -exec chmod 0755 {} + 2>/dev/null || true
+        find "$SAFE_DEST" -type f -exec chmod 0644 {} + 2>/dev/null || true
+        [ "$SAFE_DEST" = "/www/wwwroot" ] && chmod 0775 /www/wwwroot 2>/dev/null || true
+        echo "[SUCCESS] Archive extracted to $SAFE_DEST."
         ;;
 
     clear_log)

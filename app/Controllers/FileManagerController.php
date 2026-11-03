@@ -995,7 +995,9 @@ class FileManagerController
      */
     public function compressZip(): void
     {
+        @session_write_close();
         @set_time_limit(600);
+        @ini_set('memory_limit', '512M');
         $siteId = (int)($_POST['site_id'] ?? 0);
         $itemRel = trim(str_replace('\\', '/', (string)($_POST['item'] ?? '')), '/');
         $rawItems = $_POST['items'] ?? null;
@@ -1049,14 +1051,19 @@ class FileManagerController
      */
     public function batchAction(): void
     {
+        @session_write_close();
         @set_time_limit(600);
         $siteId = (int)($_POST['site_id'] ?? 0);
+        $sourceSiteId = isset($_POST['source_site_id']) ? (int)$_POST['source_site_id'] : $siteId;
         $action = trim((string)($_POST['action'] ?? ''));
         $rawItems = $_POST['items'] ?? [];
         $destRel = trim(str_replace('\\', '/', (string)($_POST['destination'] ?? '')), '/');
         $perms = trim((string)($_POST['perms'] ?? ''));
         $recursive = !empty($_POST['recursive']);
         [$site, $baseDir] = $this->getSiteContext($siteId);
+        [$sourceSite, $sourceBaseDir] = ($sourceSiteId === $siteId)
+            ? [$site, $baseDir]
+            : $this->getSiteContext($sourceSiteId);
 
         // Normalize items input (supports array, JSON array string, or comma-separated string)
         if (is_string($rawItems)) {
@@ -1102,8 +1109,12 @@ class FileManagerController
                 continue;
             }
 
-            $path = $this->resolveSafePath($baseDir, $cleanRel);
-            if ($path === null || !file_exists($path) || $this->normalizePath($path) === $this->normalizePath($baseDir)) {
+            $lookupBase = ($action === 'copy' || $action === 'move') ? $sourceBaseDir : $baseDir;
+            $lookupSite = ($action === 'copy' || $action === 'move') ? $sourceSite : $site;
+
+            $path = $this->resolveSafePath($lookupBase, $cleanRel);
+            if ($path === null || !file_exists($path) || $this->normalizePath($path) === $this->normalizePath($lookupBase)) {
+                $errors[] = basename($cleanRel) . ' (tidak ditemukan)';
                 continue;
             }
 
@@ -1140,7 +1151,11 @@ class FileManagerController
                         $errors[] = basename($path);
                     }
                 } else {
-                    if (@copy($path, $destPath)) {
+                    if (!@copy($path, $destPath)) {
+                        $this->applyChmodToPath($path, '0644', false, $lookupSite);
+                        $this->ensureWritable($targetDir, $site);
+                    }
+                    if (file_exists($destPath) || @copy($path, $destPath)) {
                         @chmod($destPath, 0644);
                         $processed++;
                     } else {
@@ -1162,7 +1177,8 @@ class FileManagerController
                     $errors[] = basename($path) . ' (sudah ada di tujuan)';
                     continue;
                 }
-                $this->ensureWritable(dirname($path), $site);
+                $this->ensureWritable(dirname($path), $lookupSite);
+                $this->ensureWritable($targetDir, $site);
                 if (@rename($path, $destPath)) {
                     $processed++;
                 } else {
@@ -1177,10 +1193,11 @@ class FileManagerController
             }
         }
 
-        if ($processed === 0 && !empty($errors)) {
+        if ($processed === 0) {
+            $errMsg = !empty($errors) ? ('Gagal memproses item: ' . implode(', ', $errors)) : 'Tidak ada item valid yang dapat diproses.';
             Response::json([
                 'success' => false,
-                'error'   => 'Gagal memproses item: ' . implode(', ', $errors),
+                'error'   => $errMsg,
             ], 400);
         }
 
@@ -1440,10 +1457,11 @@ class FileManagerController
 
     /**
      * API: Extract archive (.zip, .tar.gz, .tgz, .tar) safely and robustly.
-     * Supports high-performance CLI unzip/tar with automated fallback to PHP ZipArchive and Python zipfile.
+     * Supports high-performance CLI unzip/tar with automated fallback to PHP ZipArchive, Python zipfile, and root helper.
      */
     public function extractZip(): void
     {
+        @session_write_close();
         @set_time_limit(600);
         @ini_set('memory_limit', '512M');
 
@@ -1455,6 +1473,10 @@ class FileManagerController
         $zipPath = $this->resolveSafePath($baseDir, $relZip);
         if ($zipPath === null || !file_exists($zipPath) || is_dir($zipPath)) {
             Response::json(['success' => false, 'error' => 'File arsip tidak ditemukan atau akses ditolak.'], 404);
+        }
+
+        if (!is_readable($zipPath)) {
+            $this->applyChmodToPath($zipPath, '0644', false, $site);
         }
 
         // Determine destination directory:
@@ -1500,6 +1522,9 @@ class FileManagerController
                     }
                 }
                 exec(escapeshellarg($tarBin) . " -xf " . escapeshellarg($zipPath) . " -C " . escapeshellarg($destDir) . " 2>&1", $tarOut, $tarRet);
+                if ($tarRet !== 0 && PHP_OS_FAMILY !== 'Windows' && is_file($script)) {
+                    exec("sudo " . escapeshellarg($script) . " extract_archive " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($zipPath) . " " . escapeshellarg($destDir) . " 2>&1", $sudoTarOut, $tarRet);
+                }
                 if ($tarRet === 0) {
                     if (PHP_OS_FAMILY !== 'Windows' && is_file($script)) {
                         @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($destDir) . " 2>&1");
@@ -1529,6 +1554,8 @@ class FileManagerController
             $checkUnzip = trim((string)@shell_exec('command -v unzip 2>/dev/null'));
             if (!empty($checkUnzip) && is_executable($checkUnzip)) {
                 $unzipBin = $checkUnzip;
+            } elseif (is_executable('/usr/bin/unzip')) {
+                $unzipBin = '/usr/bin/unzip';
             }
         }
 
@@ -1543,38 +1570,23 @@ class FileManagerController
             }
         }
 
-        // ENGINE 2: PHP ZipArchive (Fallback if unzip CLI is unavailable or failed)
+        // ENGINE 2: PHP ZipArchive (Direct full extraction since verifyZipSafety already validated entries)
         if (!$extractedSuccess && class_exists('ZipArchive')) {
             $zip = new \ZipArchive();
-            $res = $zip->open($zipPath, \ZipArchive::RDONLY);
+            $res = $zip->open($zipPath);
             if ($res !== true) {
-                $res = $zip->open($zipPath);
+                $res = $zip->open($zipPath, \ZipArchive::RDONLY);
             }
 
             if ($res === true) {
-                $safeFiles = [];
-                for ($i = 0; $i < $zip->numFiles; $i++) {
-                    $stat = $zip->statIndex($i);
-                    $entryName = $stat['name'] ?? '';
-                    if ($entryName === '') {
-                        continue;
-                    }
-
-                    $normalizedEntry = str_replace('\\', '/', $entryName);
-                    if (str_starts_with($normalizedEntry, '/') || preg_match('#(^|/)\.\.(/|$)#', $normalizedEntry)) {
-                        continue;
-                    }
-                    $safeFiles[] = $entryName;
-                }
-
-                if (!empty($safeFiles)) {
-                    if (@$zip->extractTo($destDir, $safeFiles)) {
-                        $extractedSuccess = true;
-                    }
-                } elseif ($zip->numFiles === 0) {
+                if ($zip->numFiles === 0 || @$zip->extractTo($destDir)) {
                     $extractedSuccess = true;
+                } else {
+                    $statusStr = method_exists($zip, 'getStatusString') ? trim((string)$zip->getStatusString()) : '';
+                    if (empty($extractionError)) {
+                        $extractionError = $statusStr !== '' ? $statusStr : 'ZipArchive::extractTo gagal menulis ke direktori tujuan.';
+                    }
                 }
-
                 $zip->close();
             } else {
                 switch ($res) {
@@ -1606,13 +1618,16 @@ class FileManagerController
             }
         }
 
-        // ENGINE 3: Python Fallback (with Zip-Slip check per member)
+        // ENGINE 3: Python3 zipfile Fallback
         if (!$extractedSuccess && function_exists('exec')) {
             $pyBin = trim((string)@shell_exec('command -v python3 || command -v python 2>/dev/null'));
+            if (empty($pyBin) && is_executable('/usr/bin/python3')) {
+                $pyBin = '/usr/bin/python3';
+            }
             if (!empty($pyBin)) {
                 $pyScript = 'import os, sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); dest = os.path.abspath(sys.argv[2]); '
-                    . '[ ( (_ for _ in ()).throw(Exception("Zip-Slip terdeteksi")) if not os.path.abspath(os.path.join(dest, m)).startswith(dest) else None ) for m in z.namelist() ]; '
-                    . 'z.extractall(dest)';
+                    . '[ ( (_ for _ in ()).throw(Exception("Zip-Slip terdeteksi")) if os.path.commonpath([dest, os.path.abspath(os.path.join(dest, m))]) != dest else None ) for m in z.namelist() ]; '
+                    . 'z.extractall(dest); z.close()';
                 $cmd = escapeshellarg($pyBin) . " -c " . escapeshellarg($pyScript) . " " . escapeshellarg($zipPath) . " " . escapeshellarg($destDir) . " 2>&1";
                 exec($cmd, $pyOut, $pyRet);
                 if ($pyRet === 0) {
@@ -1620,6 +1635,17 @@ class FileManagerController
                 } elseif (empty($extractionError) && !empty($pyOut)) {
                     $extractionError = implode(' ', array_slice($pyOut, -2));
                 }
+            }
+        }
+
+        // ENGINE 4: Root Helper Fallback via vhost_manager.sh (handles root-owned overwrite conflicts & auto-installs unzip if missing)
+        if (!$extractedSuccess && PHP_OS_FAMILY !== 'Windows' && function_exists('exec') && is_file($script)) {
+            $sudoCmd = "sudo " . escapeshellarg($script) . " extract_archive " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($zipPath) . " " . escapeshellarg($destDir) . " 2>&1";
+            exec($sudoCmd, $sudoOut, $sudoRet);
+            if ($sudoRet === 0) {
+                $extractedSuccess = true;
+            } elseif (empty($extractionError) && !empty($sudoOut)) {
+                $extractionError = implode(' ', array_slice($sudoOut, -2));
             }
         }
 
@@ -1648,6 +1674,7 @@ class FileManagerController
      */
     public function downloadFile(): void
     {
+        @session_write_close();
         $siteId = (int)($_GET['site_id'] ?? 0);
         $relFile = trim(str_replace('\\', '/', (string)($_GET['file'] ?? '')), '/');
         [$site, $baseDir] = $this->getSiteContext($siteId);
@@ -1657,7 +1684,12 @@ class FileManagerController
             Response::error(404, 'File tidak ditemukan.');
         }
 
+        if (!is_readable($fullPath)) {
+            $this->applyChmodToPath($fullPath, '0644', false, $site);
+        }
+
         @set_time_limit(0);
+        @ini_set('zlib.output_compression', 'Off');
         while (ob_get_level() > 0) {
             @ob_end_clean();
         }
@@ -1673,6 +1705,7 @@ class FileManagerController
         header('Expires: 0');
         header('Cache-Control: must-revalidate');
         header('Pragma: public');
+        header('X-Accel-Buffering: no');
         header('Content-Length: ' . $fileSize);
 
         $fp = @fopen($fullPath, 'rb');
