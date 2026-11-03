@@ -177,6 +177,9 @@ echo -e "${BLUE}[5/5] Menyiapkan restart layanan panel di background...${NC}"
     if systemctl is-active --quiet mypanel-worker.service 2>/dev/null || [ -f /etc/systemd/system/mypanel-worker.service ]; then
         systemctl restart mypanel-worker.service 2>/dev/null || true
     fi
+    if command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; then
+        systemctl reload nginx 2>/dev/null || true
+    fi
 ) >/dev/null 2>&1 &
 
 echo -e "${GREEN}[✔] Pembaruan Almusa Panel selesai dengan sukses!${NC}"

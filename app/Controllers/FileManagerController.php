@@ -224,7 +224,7 @@ class FileManagerController
         $handle = @opendir($targetDir);
         if ($handle) {
             while (($entry = readdir($handle)) !== false) {
-                if ($entry === '.' || $entry === '..') {
+                if ($entry === '.' || $entry === '..' || str_ends_with($entry, '.part.almusa')) {
                     continue;
                 }
 
@@ -504,12 +504,22 @@ class FileManagerController
     }
 
     /**
-     * API: Upload file(s).
+     * API: Upload file(s) with automatic chunked upload support for large files.
      */
     public function uploadFile(): void
     {
-        $siteId = (int)($_POST['site_id'] ?? 0);
-        $relPath = trim($_POST['path'] ?? '', '/');
+        $contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if (empty($_POST) && empty($_FILES) && $contentLength > 0) {
+            $postMax = ini_get('post_max_size');
+            $uploadMax = ini_get('upload_max_filesize');
+            Response::json([
+                'success' => false,
+                'error'   => "Ukuran request (" . round($contentLength / 1048576, 1) . " MB) melebihi batas post_max_size PHP aktif ({$postMax}, upload_max_filesize: {$uploadMax}).",
+            ], 400);
+        }
+
+        $siteId = (int)($_POST['site_id'] ?? $_GET['site_id'] ?? 0);
+        $relPath = trim((string)($_POST['path'] ?? $_GET['path'] ?? ''), '/');
         [$site, $baseDir] = $this->getSiteContext($siteId);
 
         $targetDir = $this->resolveSafePath($baseDir, $relPath);
@@ -517,49 +527,137 @@ class FileManagerController
             Response::json(['success' => false, 'error' => 'Direktori tujuan tidak valid.'], 400);
         }
 
+        // Self-healing directory permissions if owned by root
+        if (!is_writable($targetDir)) {
+            @chmod($targetDir, 0755);
+            if (!is_writable($targetDir)) {
+                $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)$site['domain']);
+                $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
+                if (is_file($script)) {
+                    @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain) . " " . escapeshellarg($baseDir) . " 2>&1");
+                }
+            }
+        }
+
+        // 1. Handle Chunked Upload (chunk_index & total_chunks)
+        if (isset($_POST['chunk_index'], $_POST['total_chunks'])) {
+            $chunkIndex = (int)$_POST['chunk_index'];
+            $totalChunks = (int)$_POST['total_chunks'];
+            $origName = basename(trim((string)($_POST['file_name'] ?? '')));
+
+            if ($origName === '' || $origName === '.' || $origName === '..' || $totalChunks < 1 || $chunkIndex < 0 || $chunkIndex >= $totalChunks) {
+                Response::json(['success' => false, 'error' => 'Parameter potongan file (chunk) tidak valid.'], 400);
+            }
+
+            $chunkFile = $_FILES['file'] ?? null;
+            if (!$chunkFile && !empty($_FILES['files'])) {
+                $f = $_FILES['files'];
+                $chunkFile = [
+                    'name'     => is_array($f['name']) ? ($f['name'][0] ?? '') : $f['name'],
+                    'tmp_name' => is_array($f['tmp_name']) ? ($f['tmp_name'][0] ?? '') : $f['tmp_name'],
+                    'error'    => is_array($f['error']) ? ($f['error'][0] ?? UPLOAD_ERR_NO_FILE) : $f['error'],
+                ];
+            }
+
+            if (!$chunkFile) {
+                Response::json(['success' => false, 'error' => 'Data potongan file tidak diterima oleh server.'], 400);
+            }
+
+            if (($chunkFile['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+                $errCode = (int)$chunkFile['error'];
+                Response::json(['success' => false, 'error' => $this->translateUploadError($errCode)], 400);
+            }
+
+            $partPath = $targetDir . '/.' . $origName . '.part.almusa';
+            $in = @fopen($chunkFile['tmp_name'], 'rb');
+            $out = @fopen($partPath, $chunkIndex === 0 ? 'wb' : 'ab');
+
+            if (!$in || !$out) {
+                if ($in) @fclose($in);
+                if ($out) @fclose($out);
+                Response::json(['success' => false, 'error' => 'Gagal menulis potongan file ke direktori tujuan. Periksa izin folder atau sisa ruang disk.'], 500);
+            }
+
+            stream_copy_to_stream($in, $out);
+            @fclose($in);
+            @fclose($out);
+            @unlink($chunkFile['tmp_name']);
+
+            // Final chunk: rename temporary part file to target filename
+            if ($chunkIndex + 1 >= $totalChunks) {
+                $finalDest = $targetDir . '/' . $origName;
+                if (file_exists($finalDest) && !is_dir($finalDest)) {
+                    @unlink($finalDest);
+                }
+                if (!@rename($partPath, $finalDest)) {
+                    @copy($partPath, $finalDest);
+                    @unlink($partPath);
+                }
+                @chmod($finalDest, 0644);
+
+                Response::json([
+                    'success'   => true,
+                    'completed' => true,
+                    'message'   => "File '{$origName}' berhasil diunggah.",
+                    'files'     => [$origName],
+                ]);
+            }
+
+            Response::json([
+                'success'     => true,
+                'completed'   => false,
+                'chunk_index' => $chunkIndex,
+            ]);
+        }
+
+        // 2. Standard Single / Multi-File Upload
         if (empty($_FILES['file']) && empty($_FILES['files'])) {
-            Response::json(['success' => false, 'error' => 'Tidak ada file yang diunggah.'], 400);
+            Response::json([
+                'success' => false,
+                'error'   => 'Tidak ada file yang diterima server (post_max_size: ' . ini_get('post_max_size') . ', upload_max_filesize: ' . ini_get('upload_max_filesize') . ').',
+            ], 400);
         }
 
         $uploaded = [];
+        $errors = [];
         $fileData = $_FILES['file'] ?? $_FILES['files'];
 
-        // Normalize single vs multi upload
         if (is_array($fileData['name'])) {
             $count = count($fileData['name']);
             for ($i = 0; $i < $count; $i++) {
-                if ($fileData['error'][$i] === UPLOAD_ERR_OK) {
-                    $cleanName = basename($fileData['name'][$i]);
+                $errCode = (int)($fileData['error'][$i] ?? UPLOAD_ERR_NO_FILE);
+                if ($errCode === UPLOAD_ERR_OK) {
+                    $cleanName = basename((string)$fileData['name'][$i]);
                     $dest = $targetDir . '/' . $cleanName;
-                    if (move_uploaded_file($fileData['tmp_name'][$i], $dest)) {
+                    if (@move_uploaded_file($fileData['tmp_name'][$i], $dest)) {
                         @chmod($dest, 0644);
                         $uploaded[] = $cleanName;
+                    } else {
+                        $errors[] = "Gagal memindahkan '{$cleanName}' ke direktori tujuan.";
                     }
+                } else {
+                    $errors[] = $this->translateUploadError($errCode);
                 }
             }
         } else {
-            if ($fileData['error'] === UPLOAD_ERR_OK) {
-                $cleanName = basename($fileData['name']);
+            $errCode = (int)($fileData['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($errCode === UPLOAD_ERR_OK) {
+                $cleanName = basename((string)$fileData['name']);
                 $dest = $targetDir . '/' . $cleanName;
-                if (move_uploaded_file($fileData['tmp_name'], $dest)) {
+                if (@move_uploaded_file($fileData['tmp_name'], $dest)) {
                     @chmod($dest, 0644);
                     $uploaded[] = $cleanName;
+                } else {
+                    $errors[] = "Gagal memindahkan '{$cleanName}' ke direktori tujuan.";
                 }
             } else {
-                $errCode = $fileData['error'];
-                $msg = match ($errCode) {
-                    UPLOAD_ERR_INI_SIZE   => 'Ukuran file melebihi upload_max_filesize di php.ini.',
-                    UPLOAD_ERR_FORM_SIZE  => 'Ukuran file melebihi batas form.',
-                    UPLOAD_ERR_PARTIAL    => 'File hanya terunggah sebagian.',
-                    UPLOAD_ERR_NO_FILE    => 'Tidak ada file yang dipilih.',
-                    default               => 'Terjadi kesalahan saat mengunggah file (kode: ' . $errCode . ').',
-                };
-                Response::json(['success' => false, 'error' => $msg], 400);
+                Response::json(['success' => false, 'error' => $this->translateUploadError($errCode)], 400);
             }
         }
 
         if (empty($uploaded)) {
-            Response::json(['success' => false, 'error' => 'Gagal memindahkan file ke direktori tujuan.'], 500);
+            $errMsg = !empty($errors) ? implode(' ', array_unique($errors)) : 'Gagal memindahkan file ke direktori tujuan.';
+            Response::json(['success' => false, 'error' => $errMsg], 400);
         }
 
         Response::json([
@@ -570,13 +668,43 @@ class FileManagerController
     }
 
     /**
-     * API: Extract zip archive safely.
+     * Translates PHP upload error code into descriptive Indonesian message.
+     */
+    private function translateUploadError(int $errCode): string
+    {
+        switch ($errCode) {
+            case UPLOAD_ERR_INI_SIZE:
+                return 'Ukuran file melebihi upload_max_filesize di PHP (' . ini_get('upload_max_filesize') . ').';
+            case UPLOAD_ERR_FORM_SIZE:
+                return 'Ukuran file melebihi batas MAX_FILE_SIZE pada form.';
+            case UPLOAD_ERR_PARTIAL:
+                return 'File hanya terunggah sebagian (koneksi terputus).';
+            case UPLOAD_ERR_NO_FILE:
+                return 'Tidak ada file yang dipilih.';
+            case UPLOAD_ERR_NO_TMP_DIR:
+                return 'Folder temporary (/tmp) tidak ditemukan di server.';
+            case UPLOAD_ERR_CANT_WRITE:
+                return 'Gagal menulis file ke disk temporary (/tmp penuh atau tidak writable).';
+            case UPLOAD_ERR_EXTENSION:
+                return 'Unggahan file dihentikan oleh ekstensi PHP.';
+            default:
+                return 'Terjadi kesalahan saat mengunggah file (kode: ' . $errCode . ').';
+        }
+    }
+
+    /**
+     * API: Extract zip archive safely and robustly.
+     * Supports high-performance CLI unzip (handles Zip64, non-standard headers & large archives)
+     * with automated fallback to PHP ZipArchive and Python zipfile.
      */
     public function extractZip(): void
     {
-        $siteId = (int)($_POST['site_id'] ?? 0);
-        $relZip = trim($_POST['file'] ?? '', '/');
-        $relDest = trim($_POST['destination'] ?? '', '/');
+        @set_time_limit(600);
+        @ini_set('memory_limit', '512M');
+
+        $siteId = (int)($_POST['site_id'] ?? $_GET['site_id'] ?? 0);
+        $relZip = trim((string)($_POST['file'] ?? $_GET['file'] ?? ''), '/');
+        $relDest = trim((string)($_POST['destination'] ?? $_GET['destination'] ?? ''), '/');
         [$site, $baseDir] = $this->getSiteContext($siteId);
 
         $zipPath = $this->resolveSafePath($baseDir, $relZip);
@@ -584,55 +712,150 @@ class FileManagerController
             Response::json(['success' => false, 'error' => 'File arsip tidak ditemukan atau akses ditolak.'], 404);
         }
 
+        // Determine destination directory
         $destDir = empty($relDest) ? dirname($zipPath) : $this->resolveSafePath($baseDir, $relDest);
         if ($destDir === null) {
-            Response::json(['success' => false, 'error' => 'Direktori tujuan ekstraksi tidak valid.'], 400);
+            Response::json(['success' => false, 'error' => 'Direktori tujuan ekstraksi tidak valid atau berada di luar folder website.'], 400);
         }
 
         if (!is_dir($destDir)) {
             @mkdir($destDir, 0755, true);
         }
 
-        if (!class_exists('ZipArchive')) {
-            // Fallback to unzip command line
-            $cmd = "unzip -o " . escapeshellarg($zipPath) . " -d " . escapeshellarg($destDir) . " 2>&1";
-            exec($cmd, $out, $ret);
-            if ($ret !== 0) {
-                Response::json(['success' => false, 'error' => 'Gagal mengekstrak zip: ' . implode("\n", $out)], 500);
-            }
-        } else {
-            $zip = new \ZipArchive();
-            $res = $zip->open($zipPath);
-            if ($res !== true) {
-                Response::json(['success' => false, 'error' => 'Tidak dapat membuka file zip (kode error: ' . $res . ').'], 400);
-            }
+        $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)$site['domain']);
+        $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
 
-            // Zip-Slip protection: ensure no extracted file escapes destination
-            $realDest = realpath($destDir);
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                $stat = $zip->statIndex($i);
-                $name = $stat['name'];
-                if (str_contains($name, '..')) {
-                    $zip->close();
-                    Response::json(['success' => false, 'error' => 'Arsip mengandung path traversal berbahaya (..). Ekstraksi dibatalkan demi keamanan.'], 400);
-                }
-            }
-
-            $extracted = $zip->extractTo($destDir);
-            $zip->close();
-
-            if (!$extracted) {
-                Response::json(['success' => false, 'error' => 'Gagal mengekstrak isi file zip.'], 500);
+        // Self-heal permissions on destination directory before extraction
+        if (!is_writable($destDir)) {
+            @chmod($destDir, 0755);
+            if (!is_writable($destDir) && is_file($script)) {
+                @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain) . " " . escapeshellarg($destDir) . " 2>&1");
             }
         }
 
-        // Fix permissions automatically on extracted files
-        $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
-        @exec("sudo " . escapeshellarg($script) . " fix_permissions _ " . escapeshellarg($destDir) . " 2>&1");
+        $extractedSuccess = false;
+        $extractionError = '';
+
+        // ENGINE 1: High-Performance System `unzip` CLI
+        // Native C execution: handles Zip64, large archives (129MB+), and non-standard zip formats without memory bloat
+        $unzipBin = '';
+        if (function_exists('exec')) {
+            $checkUnzip = trim((string)@shell_exec('command -v unzip 2>/dev/null'));
+            if (!empty($checkUnzip) && is_executable($checkUnzip)) {
+                $unzipBin = $checkUnzip;
+            }
+        }
+
+        if (!empty($unzipBin)) {
+            // unzip flags: -q (quiet), -o (overwrite existing files without interactive prompt), -d (destination)
+            $cmd = escapeshellarg($unzipBin) . " -q -o " . escapeshellarg($zipPath) . " -d " . escapeshellarg($destDir) . " 2>&1";
+            exec($cmd, $cliOutput, $exitCode);
+
+            // Exit code 0 = success, exit code 1 = warnings (e.g. skipped symlink/minor attributes) but files were extracted
+            if ($exitCode === 0 || $exitCode === 1) {
+                $extractedSuccess = true;
+            } else {
+                $extractionError = !empty($cliOutput) ? implode(' ', array_slice($cliOutput, -3)) : 'unzip exit code ' . $exitCode;
+            }
+        }
+
+        // ENGINE 2: PHP ZipArchive (Fallback if unzip CLI is unavailable or failed)
+        if (!$extractedSuccess && class_exists('ZipArchive')) {
+            $zip = new \ZipArchive();
+            $res = $zip->open($zipPath, \ZipArchive::RDONLY);
+            if ($res !== true) {
+                $res = $zip->open($zipPath);
+            }
+
+            if ($res === true) {
+                $safeFiles = [];
+                for ($i = 0; $i < $zip->numFiles; $i++) {
+                    $stat = $zip->statIndex($i);
+                    $entryName = $stat['name'] ?? '';
+                    if ($entryName === '') {
+                        continue;
+                    }
+
+                    // Granular Zip-Slip check: reject actual directory escape attempts
+                    $normalizedEntry = str_replace('\\', '/', $entryName);
+                    if (str_starts_with($normalizedEntry, '/') || preg_match('#(^|/)\.\.(/|$)#', $normalizedEntry)) {
+                        // Skip suspicious entry rather than failing the whole archive
+                        continue;
+                    }
+                    $safeFiles[] = $entryName;
+                }
+
+                if (!empty($safeFiles)) {
+                    if ($zip->extractTo($destDir, $safeFiles)) {
+                        $extractedSuccess = true;
+                    }
+                } elseif ($zip->numFiles === 0) {
+                    $extractedSuccess = true;
+                }
+
+                $zip->close();
+            } else {
+                switch ($res) {
+                    case \ZipArchive::ER_NOZIP:
+                        $codeMsg = 'File bukan merupakan arsip zip yang valid atau belum selesai terunggah.';
+                        break;
+                    case \ZipArchive::ER_INCONS:
+                        $codeMsg = 'Struktur arsip zip tidak konsisten (inconsistent header).';
+                        break;
+                    case \ZipArchive::ER_CRC:
+                        $codeMsg = 'Checksum CRC file zip tidak cocok (file korup).';
+                        break;
+                    case \ZipArchive::ER_OPEN:
+                        $codeMsg = 'Server tidak dapat membuka file zip.';
+                        break;
+                    case \ZipArchive::ER_READ:
+                        $codeMsg = 'Gagal membaca isi file zip dari disk.';
+                        break;
+                    case \ZipArchive::ER_SEEK:
+                        $codeMsg = 'Gagal melakukan seek pada file zip.';
+                        break;
+                    default:
+                        $codeMsg = 'Kode error: ' . $res;
+                        break;
+                }
+                if (empty($extractionError)) {
+                    $extractionError = $codeMsg;
+                }
+            }
+        }
+
+        // ENGINE 3: Python Fallback (if both unzip and ZipArchive failed)
+        if (!$extractedSuccess && function_exists('exec')) {
+            $pyBin = trim((string)@shell_exec('command -v python3 || command -v python 2>/dev/null'));
+            if (!empty($pyBin)) {
+                $pyScript = "import zipfile, sys; z = zipfile.ZipFile(sys.argv[1]); z.extractall(sys.argv[2])";
+                $cmd = escapeshellarg($pyBin) . " -c " . escapeshellarg($pyScript) . " " . escapeshellarg($zipPath) . " " . escapeshellarg($destDir) . " 2>&1";
+                exec($cmd, $pyOut, $pyRet);
+                if ($pyRet === 0) {
+                    $extractedSuccess = true;
+                } elseif (empty($extractionError) && !empty($pyOut)) {
+                    $extractionError = implode(' ', array_slice($pyOut, -2));
+                }
+            }
+        }
+
+        if (!$extractedSuccess) {
+            $msg = 'Gagal mengekstrak arsip zip.';
+            if (!empty($extractionError)) {
+                $msg .= ' (' . $extractionError . ')';
+            }
+            Response::json(['success' => false, 'error' => $msg], 400);
+        }
+
+        // Fix permissions automatically on all extracted files & folders
+        if (is_file($script)) {
+            @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain) . " " . escapeshellarg($destDir) . " 2>&1");
+        }
 
         Response::json([
             'success' => true,
-            'message' => "Arsip zip berhasil diekstrak dan permission file telah diperbarui.",
+            'message' => "Arsip zip berhasil diekstrak dan seluruh permission berkas telah diperbarui.",
+            'destination' => $destDir,
         ]);
     }
 

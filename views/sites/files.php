@@ -189,6 +189,15 @@
                 </div>
 
                 <div id="uploadFileList" style="margin-top:16px;max-height:180px;overflow-y:auto;display:none;"></div>
+                <div id="uploadProgressWrap" style="margin-top:14px;display:none;">
+                    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;">
+                        <span id="uploadProgressLabel" class="text-2">Mengunggah…</span>
+                        <span id="uploadProgressPct" class="mono text-2">0%</span>
+                    </div>
+                    <div style="width:100%;height:8px;background:var(--surface-hover);border-radius:999px;overflow:hidden;">
+                        <div id="uploadProgressBar" style="width:0%;height:100%;background:var(--primary, #3b82f6);transition:width 0.15s ease;"></div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeUploadModal()">Batal</button>
@@ -696,6 +705,8 @@ function openUploadModal() {
     document.getElementById('uploadFileInput').value = '';
     document.getElementById('uploadFileList').innerHTML = '';
     document.getElementById('uploadFileList').style.display = 'none';
+    var progWrap = document.getElementById('uploadProgressWrap');
+    if (progWrap) progWrap.style.display = 'none';
     document.getElementById('uploadSubmitBtn').disabled = true;
     Almusa.openModal('uploadModal');
 }
@@ -769,36 +780,78 @@ async function submitUpload(e) {
 
     var btn = document.getElementById('uploadSubmitBtn');
     var restore = Almusa.busy(btn, 'Mengunggah…');
+    var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
-    var formData = new FormData();
-    formData.append('site_id', CURRENT_SITE_ID);
-    formData.append('path', CURRENT_PATH);
-    formData.append('_csrf_token', document.querySelector('meta[name="csrf-token"]').getAttribute('content'));
+    var progWrap = document.getElementById('uploadProgressWrap');
+    var progBar = document.getElementById('uploadProgressBar');
+    var progPct = document.getElementById('uploadProgressPct');
+    var progLabel = document.getElementById('uploadProgressLabel');
+    if (progWrap) {
+        progWrap.style.display = 'block';
+        progBar.style.width = '0%';
+        progPct.textContent = '0%';
+    }
 
-    selectedFiles.forEach(function (f) {
-        formData.append('files[]', f);
-    });
+    // 1.5 MB per chunk: bypasses default PHP 2M/8M and Nginx/Cloudflare limits safely
+    var CHUNK_SIZE = 1536 * 1024;
+    var totalBytes = selectedFiles.reduce(function (acc, f) { return acc + (f.size || 0); }, 0);
+    var uploadedBytes = 0;
 
     try {
-        var res = await fetch('/api/files/upload', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                'Accept': 'application/json'
+        for (var fIdx = 0; fIdx < selectedFiles.length; fIdx++) {
+            var file = selectedFiles[fIdx];
+            var totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+
+            for (var chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+                var start = chunkIndex * CHUNK_SIZE;
+                var end = Math.min(file.size, start + CHUNK_SIZE);
+                var chunkBlob = file.slice(start, end);
+
+                var formData = new FormData();
+                formData.append('site_id', CURRENT_SITE_ID);
+                formData.append('path', CURRENT_PATH);
+                formData.append('chunk_index', chunkIndex);
+                formData.append('total_chunks', totalChunks);
+                formData.append('file_name', file.name);
+                formData.append('_csrf_token', csrfToken);
+                formData.append('file', chunkBlob, file.name);
+
+                var uploadUrl = '/api/files/upload?site_id=' + encodeURIComponent(CURRENT_SITE_ID) + '&path=' + encodeURIComponent(CURRENT_PATH);
+                var res = await fetch(uploadUrl, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json'
+                    }
+                });
+
+                var data = null;
+                try {
+                    data = await res.json();
+                } catch (parseErr) {
+                    throw new Error('Respons server tidak valid (HTTP ' + res.status + ').');
+                }
+
+                if (!res.ok || !data || !data.success) {
+                    throw new Error((data && data.error) ? data.error : ('Gagal mengunggah file (HTTP ' + res.status + ').'));
+                }
+
+                uploadedBytes += (end - start);
+                var pct = totalBytes > 0 ? Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)) : 100;
+                if (progWrap) {
+                    progBar.style.width = pct + '%';
+                    progPct.textContent = pct + '% (' + (uploadedBytes / 1048576).toFixed(1) + ' / ' + (totalBytes / 1048576).toFixed(1) + ' MB)';
+                    progLabel.textContent = 'Mengunggah ' + file.name + '…';
+                }
             }
-        });
-        var data = await res.json();
-        if (data.success) {
-            closeUploadModal();
-            Almusa.toast(data.message || 'File berhasil diunggah.', 'success');
-            refreshDirectory();
-        } else {
-            Almusa.toast(data.error || 'Gagal mengunggah file.', 'error');
-            restore();
         }
+
+        closeUploadModal();
+        Almusa.toast(selectedFiles.length + ' file berhasil diunggah.', 'success');
+        refreshDirectory();
     } catch (err) {
-        Almusa.toast('Terjadi kesalahan saat mengunggah file.', 'error');
+        Almusa.toast((err && err.message) ? err.message : 'Terjadi kesalahan saat mengunggah file.', 'error');
         restore();
     }
 }

@@ -536,6 +536,7 @@ fi
 if [ -f /www/panel/config/nginx-panel.conf ]; then
     sed -i -E "s/listen [0-9]+ default_server;/listen ${PORT} default_server;/g" /www/panel/config/nginx-panel.conf
     sed -i -E "s/listen \[::\]:[0-9]+ default_server;/listen [::]:${PORT} default_server;/g" /www/panel/config/nginx-panel.conf
+    sed -i -E "s/client_max_body_size [0-9]+[mMgG];/client_max_body_size 1024M;/g" /www/panel/config/nginx-panel.conf
 else
     cat << EOF > /www/panel/config/nginx-panel.conf
 server {
@@ -557,7 +558,8 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-    client_max_body_size 50M;
+    client_max_body_size 1024M;
+    client_body_timeout 600s;
 
     location ~* \.(jpg|jpeg|gif|png|webp|svg|ico|css|js|woff|woff2|ttf|eot)$ {
         expires 30d;
