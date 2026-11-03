@@ -79,7 +79,7 @@ case "$ACTION" in
 </head>
 <body>
     <div class="card">
-        <span class="badge">Virtual Host Aktif</span>
+        <span class="badge">Virtual Host Aktif • PHP <?= PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION ?></span>
         <h1>Website Siap Digunakan!</h1>
         <p>Virtual Host Anda telah berhasil dibuat oleh <strong>Almusa Server Control Panel</strong>.</p>
         <p>Silakan upload file proyek web Anda ke direktori document root untuk mulai online.</p>
@@ -93,6 +93,16 @@ EOF
         fi
 
         # Determine PHP socket path
+        # Determine PHP socket path & ensure PHP-FPM service is running
+        mkdir -p /run/php
+        chown www-data:www-data /run/php 2>/dev/null || true
+        chmod 0755 /run/php 2>/dev/null || true
+        if [ -x "/usr/sbin/php-fpm${PHP_VER}" ] || [ -f "/etc/php/${PHP_VER}/fpm/php-fpm.conf" ]; then
+            if ! [ -S "/run/php/php${PHP_VER}-fpm.sock" ] || ! systemctl is-active --quiet "php${PHP_VER}-fpm" 2>/dev/null; then
+                echo "[INFO] Starting PHP ${PHP_VER}-FPM service..."
+                systemctl enable --now "php${PHP_VER}-fpm" 2>/dev/null || systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
+            fi
+        fi
         PHP_SOCK="unix:/run/php/php${PHP_VER}-fpm.sock"
         REWRITE_CONF="${PANEL_ROOT}/rewrite/nginx/${REWRITE}.conf"
         if [ ! -f "$REWRITE_CONF" ]; then
@@ -133,6 +143,15 @@ EOF
             exit 1
         fi
 
+        mkdir -p /run/php
+        chown www-data:www-data /run/php 2>/dev/null || true
+        chmod 0755 /run/php 2>/dev/null || true
+        if [ -x "/usr/sbin/php-fpm${PHP_VER}" ] || [ -f "/etc/php/${PHP_VER}/fpm/php-fpm.conf" ]; then
+            if ! [ -S "/run/php/php${PHP_VER}-fpm.sock" ] || ! systemctl is-active --quiet "php${PHP_VER}-fpm" 2>/dev/null; then
+                echo "[INFO] Starting PHP ${PHP_VER}-FPM service..."
+                systemctl enable --now "php${PHP_VER}-fpm" 2>/dev/null || systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
+            fi
+        fi
         PHP_SOCK="unix:\/run\/php\/php${PHP_VER}-fpm.sock"
         sed -i -E "s|fastcgi_pass unix:/run/php/php[0-9.]+-fpm.sock;|fastcgi_pass ${PHP_SOCK};|g" "$CONF_FILE"
 

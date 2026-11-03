@@ -69,7 +69,7 @@ class PluginController
         }
 
         // Available Extensions
-        $extensions = ['redis', 'imagick', 'memcached', 'xdebug', 'soap', 'intl', 'zip'];
+        $extensions = ['redis', 'imagick', 'memcached', 'xdebug', 'soap', 'intl', 'zip', 'bz2', 'gmp', 'ldap', 'gd', 'bcmath', 'mbstring', 'curl', 'xml', 'mysql', 'pgsql', 'sqlite3', 'exif', 'apcu', 'igbinary', 'msgpack', 'mongodb'];
 
         Response::view('plugins/index', [
             'title'      => 'App Store & Plugins',
@@ -156,7 +156,7 @@ class PluginController
             Response::json(['success' => false, 'error' => 'Versi PHP tidak valid.'], 400);
         }
 
-        $allowedExts = ['redis', 'imagick', 'memcached', 'xdebug', 'soap', 'intl', 'zip'];
+        $allowedExts = ['redis', 'imagick', 'memcached', 'xdebug', 'soap', 'intl', 'zip', 'bz2', 'gmp', 'ldap', 'gd', 'bcmath', 'mbstring', 'curl', 'xml', 'mysql', 'pgsql', 'sqlite3', 'exif', 'apcu', 'igbinary', 'msgpack', 'mongodb'];
         if (!in_array($ext, $allowedExts)) {
             Response::json(['success' => false, 'error' => 'Ekstensi tidak diizinkan.'], 400);
         }

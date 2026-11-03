@@ -73,9 +73,11 @@ $rewriteLabels = [
                                 <?php foreach ($installedPhpVersions as $ver): ?>
                                     <option value="<?= e($ver) ?>" <?= $site['php_version'] === $ver ? 'selected' : '' ?>>PHP <?= e($ver) ?></option>
                                 <?php endforeach; ?>
-                                <?php if (!in_array($site['php_version'], $installedPhpVersions, true)): ?>
-                                    <option value="<?= e($site['php_version']) ?>" selected disabled>PHP <?= e($site['php_version']) ?> (Belum terpasang)</option>
-                                <?php endif; ?>
+                                <?php foreach (['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'] as $allVer): ?>
+                                    <?php if (!in_array($allVer, $installedPhpVersions, true)): ?>
+                                        <option value="<?= e($allVer) ?>" <?= $site['php_version'] === $allVer ? 'selected' : '' ?> disabled>PHP <?= e($allVer) ?> (Belum terpasang)</option>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
                             </select>
                         </td>
                         <td>
@@ -170,7 +172,10 @@ $rewriteLabels = [
                 </div>
                 <div class="field-row">
                     <div class="field">
-                        <label class="label" for="sitePhp">Versi PHP</label>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <label class="label" for="sitePhp" style="margin:0;">Versi PHP</label>
+                            <a href="/plugins" style="font-size:11.5px; color:var(--accent); text-decoration:none; font-weight:500;" title="Pasang PHP 7.4 - 8.5 di App Store">+ Pasang versi lain</a>
+                        </div>
                         <?php if (empty($installedPhpVersions)): ?>
                             <div class="callout callout-warning" style="margin-bottom: 8px; font-size: 12px; padding: 8px 12px; border-radius: var(--radius-sm); background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fbbf24;">
                                 <?= ui_icon('alert-triangle') ?> Belum ada PHP terpasang. <a href="/plugins" style="color: #38bdf8; text-decoration: underline; font-weight: 600;">Buka App Store</a>
@@ -184,6 +189,11 @@ $rewriteLabels = [
                                     <option value="<?= e($ver) ?>" <?= $ver === '8.3' || $ver === reset($installedPhpVersions) ? 'selected' : '' ?>>
                                         PHP <?= e($ver) ?> (Terpasang)
                                     </option>
+                                <?php endforeach; ?>
+                                <?php foreach (['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'] as $allVer): ?>
+                                    <?php if (!in_array($allVer, $installedPhpVersions, true)): ?>
+                                        <option value="<?= e($allVer) ?>" disabled>PHP <?= e($allVer) ?> (Belum terpasang — Pasang di App Store)</option>
+                                    <?php endif; ?>
                                 <?php endforeach; ?>
                             </select>
                         <?php endif; ?>

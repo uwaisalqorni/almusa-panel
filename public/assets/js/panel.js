@@ -486,6 +486,8 @@
     var taskTimer = null;
     var autoScroll = true;
     var lastLog = null;
+    var wasBusyInModal = false;
+    var completedInModal = false;
 
     function renderLog(text) {
         return text.split('\n').map(function (line) {
@@ -510,6 +512,11 @@
         if (!modal) return;
         modal.classList.remove('show');
         if (taskTimer) { clearInterval(taskTimer); taskTimer = null; }
+        if (completedInModal && (location.pathname === '/plugins' || location.pathname === '/sites')) {
+            completedInModal = false;
+            wasBusyInModal = false;
+            location.reload();
+        }
     };
 
     window.toggleAutoScroll = function () {
@@ -550,6 +557,15 @@
             var pending = document.getElementById('pendingTaskBadge');
             var spinner = document.getElementById('runningTaskSpinner');
             var busy = data.pending_count > 0 || data.running_task;
+            var termModal = document.getElementById('taskTerminalModal');
+            if (termModal && termModal.classList.contains('show')) {
+                if (busy) {
+                    wasBusyInModal = true;
+                } else if (wasBusyInModal && data.last_task) {
+                    wasBusyInModal = false;
+                    completedInModal = true;
+                }
+            }
 
             if (bell) bell.classList.toggle('active', !!busy);
             if (pending) {

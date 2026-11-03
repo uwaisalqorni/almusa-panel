@@ -207,6 +207,12 @@ $services = [
                                     <button type="button" class="btn btn-secondary btn-sm" onclick="openExtModal(<?= js_arg($ver) ?>)">
                                         <?= ui_icon('puzzle') ?> Ekstensi
                                     </button>
+                                    <?php if (!$info['active']): ?>
+                                        <button type="button" class="btn btn-primary btn-sm" title="Jalankan PHP-FPM <?= e($ver) ?>"
+                                                onclick="controlService('php<?= e($ver) ?>-fpm', 'start')">
+                                            <?= ui_icon('play') ?> Start
+                                        </button>
+                                    <?php endif; ?>
                                     <button type="button" class="btn btn-ghost btn-icon btn-sm" title="Restart PHP-FPM <?= e($ver) ?>" aria-label="Restart PHP-FPM <?= e($ver) ?>"
                                             onclick="controlService('php<?= e($ver) ?>-fpm', 'restart')">
                                         <?= ui_icon('refresh') ?>
@@ -291,7 +297,91 @@ async function checkAllPhpUpdates() {
     }
 }
 
-async function openExtModal(ver) {
+</script>
+
+<!-- Modal Kelola Ekstensi PHP -->
+<div class="modal-backdrop" id="phpExtModal">
+    <div class="modal modal-md" role="dialog" aria-modal="true" aria-labelledby="phpExtTitle">
+        <div class="modal-header">
+            <div>
+                <h2 class="modal-title" id="phpExtTitle">Kelola Ekstensi PHP <span id="extPhpVerText"></span></h2>
+                <p class="modal-subtitle">Pasang atau hapus modul ekstensi tambahan untuk PHP <strong id="extPhpVerSub"></strong>.</p>
+            </div>
+            <button type="button" class="icon-btn" onclick="Almusa.closeModal('phpExtModal')" aria-label="Tutup"><?= ui_icon('x') ?></button>
+        </div>
+        <div class="modal-body">
+            <div class="field">
+                <label class="label">Pilih ekstensi populer (klik untuk mengisi)</label>
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                    <?php foreach (['redis', 'imagick', 'memcached', 'soap', 'intl', 'zip', 'gd', 'bcmath', 'bz2', 'gmp', 'ldap', 'exif', 'apcu', 'xdebug', 'igbinary', 'mongodb'] as $extChip): ?>
+                        <button type="button" class="btn btn-secondary btn-sm mono" style="font-size:12px;" onclick="selectPhpExtChip('<?= e($extChip) ?>')">
+                            <?= e($extChip) ?>
+                        </button>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <div class="field" style="margin-top:12px;">
+                <label class="label" for="phpExtNameInput">Nama ekstensi</label>
+                <input type="text" id="phpExtNameInput" class="input mono" placeholder="contoh: redis" autocomplete="off">
+                <div class="help">Paket <code>php<span id="extPkgPreview">8.3</span>-&lt;ekstensi&gt;</code> akan dikelola via daemon APT dan PHP-FPM otomatis di-restart.</div>
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content:space-between;">
+            <button type="button" class="btn btn-ghost" style="color:var(--err);" onclick="submitPhpExtAction('uninstall')">
+                <?= ui_icon('trash') ?> Hapus Ekstensi
+            </button>
+            <div style="display:flex; gap:8px;">
+                <button type="button" class="btn btn-secondary" onclick="Almusa.closeModal('phpExtModal')">Batal</button>
+                <button type="button" class="btn btn-primary" onclick="submitPhpExtAction('install')">
+                    <?= ui_icon('download') ?> Pasang Ekstensi
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var CURRENT_EXT_PHP_VER = '8.3';
+
+function openExtModal(ver) {
+    CURRENT_EXT_PHP_VER = ver;
+    document.getElementById('extPhpVerText').textContent = ver;
+    document.getElementById('extPhpVerSub').textContent = ver;
+    document.getElementById('extPkgPreview').textContent = ver;
+    document.getElementById('phpExtNameInput').value = 'redis';
+    Almusa.openModal('phpExtModal');
+}
+
+function selectPhpExtChip(ext) {
+    document.getElementById('phpExtNameInput').value = ext;
+    document.getElementById('phpExtNameInput').focus();
+}
+
+async function submitPhpExtAction(subAction) {
+    var ext = (document.getElementById('phpExtNameInput').value || '').trim().toLowerCase();
+    if (!ext) {
+        Almusa.toast('Masukkan nama ekstensi terlebih dahulu.', 'error');
+        return;
+    }
+
+    try {
+        var data = await Almusa.post('/api/plugins/php/extension', {
+            version: CURRENT_EXT_PHP_VER,
+            extension: ext,
+            sub_action: subAction
+        });
+        if (data.success) {
+            Almusa.closeModal('phpExtModal');
+            openTaskTerminal();
+        } else {
+            Almusa.toast(data.error || 'Gagal menjadwalkan aksi ekstensi.', 'error');
+        }
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+    }
+}
+
+async function openExtModalLegacy(ver) {
     var ext = await Almusa.prompt({
         title: 'Pasang ekstensi PHP ' + ver,
         message: 'Contoh: redis, imagick, memcached, soap, xdebug.',

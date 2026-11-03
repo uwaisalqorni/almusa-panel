@@ -175,9 +175,10 @@ else
 
     if [ "$OS" = "ubuntu" ] && [ -f /etc/apt/sources.list.d/php.list ]; then
         if grep -q "packages.sury.org" /etc/apt/sources.list.d/php.list 2>/dev/null; then
-            rm -f /etc/apt/sources.list.d/php.list
+            rm -f /etc/apt/sources.list.d/php.list /etc/apt/sources.list.d/ondrej-ubuntu-php-fallback.sources 2>/dev/null || true
         fi
     fi
+    rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php-fallback.sources 2>/dev/null || true
     apt-get update -y || true
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
         curl \
@@ -198,16 +199,34 @@ else
 
     USE_ONDREJ_PPA=false
     if [ "$OS" = "ubuntu" ]; then
-        rm -f /etc/apt/sources.list.d/php.list
-        echo -e "${BLUE}[*] Memeriksa ketersediaan PPA ondrej/php untuk Ubuntu '${CODENAME}'...${NC}"
-        if curl -fsSLI "https://ppa.launchpadcontent.net/ondrej/php/ubuntu/dists/${CODENAME}/Release" >/dev/null 2>&1; then
-            echo -e "${GREEN}[✔] PPA ondrej/php mendukung '${CODENAME}'. Mendaftarkan PPA...${NC}"
-            add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+        rm -f /etc/apt/sources.list.d/php.list /etc/apt/sources.list.d/ondrej-ubuntu-php-fallback.sources /etc/apt/sources.list.d/*ondrej* 2>/dev/null || true
+        mkdir -p /usr/share/keyrings /etc/apt/trusted.gpg.d
+        TMP_INSTALL_RING="/tmp/ondrej_bootstrap_$$.gpg"
+        rm -f "$TMP_INSTALL_RING"
+        for k in 14AA40EC0831756756D7F66C4F4EA0AAE5267A6C 71DAEAAB4AD4CAB6; do
+            ASC_DATA=$(curl -fsSL --connect-timeout 15 "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x${k}" 2>/dev/null || true)
+            if [ -n "$ASC_DATA" ] && echo "$ASC_DATA" | grep -q "BEGIN PGP PUBLIC KEY BLOCK"; then
+                echo "$ASC_DATA" | gpg --batch --no-default-keyring --keyring "$TMP_INSTALL_RING" --import >/dev/null 2>&1 || true
+            fi
+        done
+        if [ -s "$TMP_INSTALL_RING" ]; then
+            gpg --batch --no-default-keyring --keyring "$TMP_INSTALL_RING" --export > /usr/share/keyrings/ondrej-ubuntu-php.gpg 2>/dev/null || true
+            chmod 0644 /usr/share/keyrings/ondrej-ubuntu-php.gpg 2>/dev/null || true
+            cp -f /usr/share/keyrings/ondrej-ubuntu-php.gpg /etc/apt/trusted.gpg.d/ondrej-ubuntu-php.gpg 2>/dev/null || true
+        fi
+        rm -f "$TMP_INSTALL_RING" "${TMP_INSTALL_RING}~" 2>/dev/null || true
+        TARGET_SUITE="$CODENAME"
+        if ! curl -fsSLI --connect-timeout 10 "https://ppa.launchpadcontent.net/ondrej/php/ubuntu/dists/${TARGET_SUITE}/InRelease" >/dev/null 2>&1; then
+            TARGET_SUITE="noble"
+        fi
+        if [ -s /usr/share/keyrings/ondrej-ubuntu-php.gpg ]; then
+            echo "deb [signed-by=/usr/share/keyrings/ondrej-ubuntu-php.gpg] https://ppa.launchpadcontent.net/ondrej/php/ubuntu ${TARGET_SUITE} main" > /etc/apt/sources.list.d/ondrej-ubuntu-php.list
+            chmod 0644 /etc/apt/sources.list.d/ondrej-ubuntu-php.list
             USE_ONDREJ_PPA=true
-        else
-            echo -e "${YELLOW}[!] PPA ondrej/php belum memiliki build rilis untuk Ubuntu '${CODENAME}'.${NC}"
-            echo -e "${BLUE}[*] Menggunakan paket runtime PHP resmi bawaan distro Ubuntu ${CODENAME}...${NC}"
-            rm -f /etc/apt/sources.list.d/*ondrej* 2>/dev/null || true
+            echo -e "${GREEN}[✔] PPA ondrej/php (${TARGET_SUITE}) berhasil didaftarkan.${NC}"
+        elif command -v add-apt-repository >/dev/null 2>&1; then
+            LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php 2>/dev/null || true
+            USE_ONDREJ_PPA=true
         fi
     else
         mkdir -p /usr/share/keyrings
