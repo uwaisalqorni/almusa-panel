@@ -1715,7 +1715,7 @@ async function fpLoadDirectory(relPath) {
             return;
         }
 
-        var dirs = data.dirs || [];
+        var dirs = data.dirs || (data.items || []).filter(function (item) { return item.is_dir; });
         if (dirs.length === 0) {
             if (empty) empty.style.display = 'block';
         } else {

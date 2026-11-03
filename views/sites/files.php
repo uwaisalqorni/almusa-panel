@@ -92,7 +92,7 @@
     </div>
 
     <!-- Clipboard Bar (Shown when items are Cut or Copied) -->
-    <div id="fmClipboardBar" style="display:none;padding:8px 16px;background:rgba(59, 130, 246, 0.1);border-bottom:1px solid rgba(59, 130, 246, 0.25);font-size:12px;display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div id="fmClipboardBar" style="display:none;padding:8px 16px;background:rgba(59, 130, 246, 0.1);border-bottom:1px solid rgba(59, 130, 246, 0.25);font-size:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         <div style="display:flex;align-items:center;gap:8px;">
             <?= ui_icon('clipboard') ?>
             <span id="fmClipboardLabel" class="text-2">Clipboard aktif</span>
@@ -119,6 +119,9 @@
             </button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="batchAction('cut')" title="Potong item terpilih">
                 <?= ui_icon('scissors') ?> Potong
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="batchAction('compress')" title="Kompres item terpilih ke .zip">
+                <?= ui_icon('archive') ?> Zip
             </button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="batchAction('chmod')" title="Ubah izin hak akses item terpilih">
                 <?= ui_icon('key') ?> Chmod
@@ -408,13 +411,13 @@
 </div>
 
 <!-- =========================================================================
-     MODAL: EKSTRAK ARSIP ZIP (MULTI-ENGINE)
+     MODAL: EKSTRAK ARSIP ZIP / TAR (MULTI-ENGINE)
      ========================================================================= -->
 <div class="modal-backdrop" id="extractModal">
     <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="extractTitle">
         <div class="modal-header">
             <div>
-                <h2 class="modal-title" id="extractTitle">Ekstrak Arsip ZIP</h2>
+                <h2 class="modal-title" id="extractTitle">Ekstrak Arsip</h2>
                 <p class="modal-subtitle">Ekstrak seluruh berkas dan atur permission secara otomatis.</p>
             </div>
             <button type="button" class="icon-btn" onclick="closeExtractModal()" aria-label="Tutup"><?= ui_icon('x') ?></button>
@@ -423,13 +426,13 @@
             <input type="hidden" id="extractZipPath" value="">
             <div class="modal-body">
                 <div class="field">
-                    <label class="label">File ZIP</label>
+                    <label class="label">File Arsip</label>
                     <code id="extractZipName" style="display:block;padding:8px 12px;font-size:13px;"></code>
                 </div>
                 <div class="field">
                     <label class="label" for="extractDestPath">Direktori Tujuan</label>
-                    <input type="text" id="extractDestPath" class="input" placeholder="Kosongkan untuk mengekstrak di folder ini">
-                    <div class="help">Relatif terhadap root folder website. Kosongkan untuk ekstrak di folder ini.</div>
+                    <input type="text" id="extractDestPath" class="input mono" placeholder="contoh: / atau subfolder">
+                    <div class="help">Isi <code>/</code> untuk mengekstrak ke root website, atau kosongkan untuk mengekstrak di folder arsip berada.</div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -442,10 +445,13 @@
 
 <script>
 var CURRENT_SITE_ID = <?= (int)($site['id'] ?? 0) ?>;
+var CURRENT_SITE_DOMAIN = <?= json_encode((string)($site['domain'] ?? '')) ?>;
 var CURRENT_PATH = <?= json_encode((string)$initialPath) ?>;
 var CURRENT_ITEMS = [];
 var ACTIVE_EDITOR_FILE = null;
 var ACTIVE_EDITOR_IS_NGINX = false;
+var EDITOR_ORIGINAL_CONTENT = '';
+var EDITOR_IS_DIRTY = false;
 var OPEN_EDIT_INITIAL = <?= json_encode((string)$openEdit) ?>;
 
 // Clipboard State for Copy / Cut
@@ -503,6 +509,12 @@ async function loadDirectory(path) {
         renderBreadcrumbs(res.breadcrumbs || [], res.parent_path);
         renderStats(res.stats);
         renderTable(CURRENT_ITEMS);
+
+        var searchInput = document.getElementById('fmSearchInput');
+        if (searchInput && searchInput.value.trim() !== '') {
+            filterFiles(searchInput.value);
+        }
+
         updateBatchBar();
         updateClipboardBar();
 
@@ -519,7 +531,7 @@ async function loadDirectory(path) {
 function renderBreadcrumbs(crumbs, parentPath) {
     var parentBtn = document.getElementById('fmParentBtn');
     if (parentBtn) {
-        parentBtn.style.display = (parentPath !== null) ? 'inline-grid' : 'none';
+        parentBtn.style.display = (parentPath !== null && parentPath !== undefined) ? 'inline-grid' : 'none';
     }
 
     var container = document.getElementById('fmCrumbSegments');
@@ -625,7 +637,7 @@ function renderTable(items) {
             nameWrap.title = 'Klik untuk mengedit berkas';
         } else if (item.is_archive) {
             nameWrap.onclick = function () { openExtractModal(item.path, item.name); };
-            nameWrap.title = 'Klik untuk mengekstrak zip';
+            nameWrap.title = 'Klik untuk mengekstrak arsip';
         }
         tdName.appendChild(nameWrap);
         tr.appendChild(tdName);
@@ -721,18 +733,38 @@ function filterFiles(query) {
     var rows = document.querySelectorAll('#fmTableBody tr.fm-item-row');
     rows.forEach(function (row) {
         var name = (row.dataset.name || '').toLowerCase();
-        row.style.display = (name.indexOf(q) !== -1) ? '' : 'none';
+        var visible = (name.indexOf(q) !== -1);
+        row.style.display = visible ? '' : 'none';
+        if (!visible) {
+            var chk = row.querySelector('.fm-row-checkbox');
+            if (chk && chk.checked) {
+                chk.checked = false;
+            }
+        }
     });
+    updateBatchBar();
 }
 
 /* ----------------------------------------------------------- SELECTION & BATCH */
 function toggleSelectAll(checked) {
-    var boxes = document.querySelectorAll('.fm-row-checkbox');
-    boxes.forEach(function (b) { b.checked = checked; });
+    var rows = document.querySelectorAll('#fmTableBody tr.fm-item-row');
+    rows.forEach(function (row) {
+        var chk = row.querySelector('.fm-row-checkbox');
+        if (!chk) return;
+        if (checked) {
+            if (row.style.display !== 'none') {
+                chk.checked = true;
+            }
+        } else {
+            chk.checked = false;
+        }
+    });
     updateBatchBar();
 }
 
 function deselectAll() {
+    var selectAll = document.getElementById('fmSelectAll');
+    if (selectAll) selectAll.checked = false;
     toggleSelectAll(false);
 }
 
@@ -796,6 +828,9 @@ async function batchAction(action) {
         deselectAll();
     } else if (action === 'chmod') {
         openChmodModal(selected[0], '755', false, selected);
+    } else if (action === 'compress') {
+        var firstBase = (selected[0] || '').split('/').pop() || 'archive';
+        openCompressModal(selected[0], firstBase, selected);
     }
 }
 
@@ -820,7 +855,7 @@ function updateClipboardBar() {
     if (CLIPBOARD && CLIPBOARD.action && CLIPBOARD.items.length > 0) {
         bar.style.display = 'flex';
         var actName = CLIPBOARD.action === 'copy' ? 'Salin' : 'Pindahkan (Cut)';
-        label.innerHTML = '📋 Clipboard: <strong>' + CLIPBOARD.items.length + ' item</strong> disiapkan untuk di-<strong>' + actName + '</strong> ke: <code>/' + (CURRENT_PATH || '') + '</code>';
+        label.innerHTML = '📋 Clipboard: <strong>' + CLIPBOARD.items.length + ' item</strong> disiapkan untuk di-<strong>' + actName + '</strong> ke: <code>/' + escapeHtml(CURRENT_PATH || '') + '</code>';
     } else {
         bar.style.display = 'none';
     }
@@ -886,10 +921,10 @@ async function submitRename(e) {
             refreshDirectory();
         } else {
             Almusa.toast(res.error || 'Gagal mengubah nama.', 'error');
-            restore();
         }
     } catch (e) {
         Almusa.toast('Kesalahan jaringan.', 'error');
+    } finally {
         restore();
     }
 }
@@ -986,26 +1021,35 @@ async function submitChmod(e) {
             refreshDirectory();
         } else {
             Almusa.toast(res.error || 'Gagal mengubah izin.', 'error');
-            restore();
         }
     } catch (e) {
         Almusa.toast('Kesalahan jaringan.', 'error');
+    } finally {
         restore();
     }
 }
 
 /* ----------------------------------------------------------- COMPRESS MODAL */
-function openCompressModal(itemPath, itemName) {
-    document.getElementById('compressSourceItem').value = itemPath;
-    document.getElementById('compressSourceName').textContent = itemName;
-    var defaultZip = (itemName.replace(/\.[^/.]+$/, '') || 'archive') + '.zip';
-    document.getElementById('compressZipName').value = defaultZip;
+var COMPRESS_BATCH_ITEMS = null;
+
+function openCompressModal(itemPath, itemName, batchItems) {
+    COMPRESS_BATCH_ITEMS = batchItems || null;
+    document.getElementById('compressSourceItem').value = itemPath || '';
+    if (batchItems && batchItems.length > 1) {
+        document.getElementById('compressSourceName').textContent = batchItems.length + ' item terpilih';
+        document.getElementById('compressZipName').value = 'archive_' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '.zip';
+    } else {
+        document.getElementById('compressSourceName').textContent = itemName;
+        var defaultZip = (itemName.replace(/\.[^/.]+$/, '') || itemName || 'archive') + '.zip';
+        document.getElementById('compressZipName').value = defaultZip;
+    }
     Almusa.openModal('compressModal');
     setTimeout(function () { document.getElementById('compressZipName').focus(); }, 60);
 }
 
 function closeCompressModal() {
     Almusa.closeModal('compressModal');
+    COMPRESS_BATCH_ITEMS = null;
 }
 
 async function submitCompress(e) {
@@ -1016,21 +1060,27 @@ async function submitCompress(e) {
     var restore = Almusa.busy(btn, 'Mengompres…');
 
     try {
-        var res = await Almusa.post('/api/files/compress', {
+        var payload = {
             site_id: CURRENT_SITE_ID,
-            item: item,
             zip_name: zipName
-        });
+        };
+        if (COMPRESS_BATCH_ITEMS && COMPRESS_BATCH_ITEMS.length > 0) {
+            payload.items = COMPRESS_BATCH_ITEMS;
+        } else {
+            payload.item = item;
+        }
+
+        var res = await Almusa.post('/api/files/compress', payload);
         if (res.success) {
             closeCompressModal();
             Almusa.toast(res.message || 'Arsip berhasil dibuat.', 'success');
             refreshDirectory();
         } else {
             Almusa.toast(res.error || 'Gagal membuat arsip.', 'error');
-            restore();
         }
     } catch (e) {
         Almusa.toast('Kesalahan jaringan saat mengompres.', 'error');
+    } finally {
         restore();
     }
 }
@@ -1051,11 +1101,16 @@ function updateEditorStats() {
         nums.push(i);
     }
     gutter.textContent = nums.join('\n');
+
+    EDITOR_IS_DIRTY = (val !== EDITOR_ORIGINAL_CONTENT);
 }
 
 async function openFileEditor(filePath) {
     ACTIVE_EDITOR_FILE = filePath;
     ACTIVE_EDITOR_IS_NGINX = false;
+    EDITOR_ORIGINAL_CONTENT = '';
+    EDITOR_IS_DIRTY = false;
+
     document.getElementById('editorFileTitle').textContent = filePath.split('/').pop();
     document.getElementById('editorFilePath').textContent = '/' + filePath;
     document.getElementById('editorSyntaxError').style.display = 'none';
@@ -1073,6 +1128,8 @@ async function openFileEditor(filePath) {
 
         var textarea = document.getElementById('editorTextarea');
         textarea.value = res.content || '';
+        EDITOR_ORIGINAL_CONTENT = textarea.value;
+        EDITOR_IS_DIRTY = false;
         document.getElementById('editorSyntaxBadge').textContent = (res.syntax || 'txt').toUpperCase();
         document.getElementById('editorStatusText').textContent = 'Siap (' + (res.size || 0) + ' bytes)';
         updateEditorStats();
@@ -1086,8 +1143,12 @@ async function openFileEditor(filePath) {
 async function openNginxEditor() {
     ACTIVE_EDITOR_FILE = 'nginx.conf';
     ACTIVE_EDITOR_IS_NGINX = true;
+    EDITOR_ORIGINAL_CONTENT = '';
+    EDITOR_IS_DIRTY = false;
+
+    var cleanDomain = CURRENT_SITE_DOMAIN || document.getElementById('siteSelector').selectedOptions[0].text.replace(/^[^\w.-]+/, '').trim();
     document.getElementById('editorFileTitle').textContent = 'Konfigurasi Nginx (Virtual Host)';
-    document.getElementById('editorFilePath').textContent = '/etc/nginx/sites-available/' + document.getElementById('siteSelector').selectedOptions[0].text.trim() + '.conf';
+    document.getElementById('editorFilePath').textContent = '/etc/nginx/sites-available/' + cleanDomain + '.conf';
     document.getElementById('editorSyntaxBadge').textContent = 'NGINX';
     document.getElementById('editorSyntaxError').style.display = 'none';
     document.getElementById('editorStatusText').textContent = 'Memuat konfigurasi Nginx…';
@@ -1104,6 +1165,8 @@ async function openNginxEditor() {
 
         var textarea = document.getElementById('editorTextarea');
         textarea.value = res.content || '';
+        EDITOR_ORIGINAL_CONTENT = textarea.value;
+        EDITOR_IS_DIRTY = false;
         document.getElementById('editorStatusText').textContent = 'Konfigurasi aktif';
         updateEditorStats();
         textarea.focus();
@@ -1113,10 +1176,20 @@ async function openNginxEditor() {
     }
 }
 
-function closeCodeEditor() {
+async function closeCodeEditor() {
+    if (EDITOR_IS_DIRTY) {
+        var discard = await Almusa.confirm({
+            title: 'Perubahan Belum Disimpan',
+            message: 'Ada perubahan pada editor yang belum disimpan. Tutup tanpa menyimpan?',
+            confirmText: 'Tutup tanpa menyimpan',
+            danger: true
+        });
+        if (!discard) return;
+    }
     Almusa.closeModal('codeEditorModal');
     ACTIVE_EDITOR_FILE = null;
     ACTIVE_EDITOR_IS_NGINX = false;
+    EDITOR_IS_DIRTY = false;
 }
 
 async function saveEditorContent() {
@@ -1140,9 +1213,10 @@ async function saveEditorContent() {
     try {
         var res = await Almusa.post('/api/files/save', payload);
         if (res.success) {
+            EDITOR_ORIGINAL_CONTENT = content;
+            EDITOR_IS_DIRTY = false;
             Almusa.toast(res.message || 'File berhasil disimpan.', 'success');
             document.getElementById('editorStatusText').textContent = 'Tersimpan ' + new Date().toLocaleTimeString();
-            restore();
             refreshDirectory();
         } else {
             Almusa.toast('Gagal menyimpan file.', 'error');
@@ -1150,10 +1224,10 @@ async function saveEditorContent() {
                 errBox.textContent = res.error;
                 errBox.style.display = 'block';
             }
-            restore();
         }
     } catch (e) {
         Almusa.toast('Kesalahan jaringan saat menyimpan file.', 'error');
+    } finally {
         restore();
     }
 }
@@ -1168,7 +1242,12 @@ function copyEditorContent() {
     var textarea = document.getElementById('editorTextarea');
     var gutter = document.getElementById('editorGutter');
 
-    textarea.addEventListener('input', updateEditorStats);
+    textarea.addEventListener('input', function () {
+        updateEditorStats();
+        if (EDITOR_IS_DIRTY) {
+            document.getElementById('editorStatusText').textContent = 'Belum disimpan • Tekan Ctrl+S untuk menyimpan';
+        }
+    });
 
     textarea.addEventListener('scroll', function () {
         gutter.scrollTop = textarea.scrollTop;
@@ -1234,10 +1313,10 @@ async function submitNewItem(e) {
             }
         } else {
             Almusa.toast(res.error || 'Gagal membuat item.', 'error');
-            restore();
         }
     } catch (err) {
         Almusa.toast('Kesalahan jaringan.', 'error');
+    } finally {
         restore();
     }
 }
@@ -1280,7 +1359,9 @@ function openUploadModal() {
     document.getElementById('uploadFileList').style.display = 'none';
     var progWrap = document.getElementById('uploadProgressWrap');
     if (progWrap) progWrap.style.display = 'none';
-    document.getElementById('uploadSubmitBtn').disabled = true;
+    var btn = document.getElementById('uploadSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Mulai unggah';
     Almusa.openModal('uploadModal');
 }
 
@@ -1424,15 +1505,16 @@ async function submitUpload(e) {
         refreshDirectory();
     } catch (err) {
         Almusa.toast((err && err.message) ? err.message : 'Terjadi kesalahan saat mengunggah file.', 'error');
+    } finally {
         restore();
     }
 }
 
-/* ----------------------------------------------------------- EXTRACT ZIP */
+/* ----------------------------------------------------------- EXTRACT ARCHIVE */
 function openExtractModal(zipPath, zipName) {
     document.getElementById('extractZipPath').value = zipPath;
     document.getElementById('extractZipName').textContent = zipName;
-    document.getElementById('extractDestPath').value = CURRENT_PATH;
+    document.getElementById('extractDestPath').value = CURRENT_PATH || '/';
     Almusa.openModal('extractModal');
 }
 
@@ -1459,11 +1541,11 @@ async function submitExtract(e) {
             Almusa.toast(res.message || 'Arsip berhasil diekstrak.', 'success');
             refreshDirectory();
         } else {
-            Almusa.toast(res.error || 'Gagal mengekstrak arsip zip.', 'error');
-            restore();
+            Almusa.toast(res.error || 'Gagal mengekstrak arsip.', 'error');
         }
     } catch (err) {
         Almusa.toast('Kesalahan jaringan saat mengekstrak.', 'error');
+    } finally {
         restore();
     }
 }

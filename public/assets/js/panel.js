@@ -58,7 +58,20 @@
         var csrf = getCsrfToken();
         var body = new URLSearchParams();
         body.append('_csrf_token', csrf);
-        Object.keys(data || {}).forEach(function (k) { body.append(k, data[k]); });
+        Object.keys(data || {}).forEach(function (k) {
+            var val = data[k];
+            if (val === undefined || val === null) return;
+            if (Array.isArray(val)) {
+                var arrKey = k.endsWith('[]') ? k : (k + '[]');
+                val.forEach(function (item) {
+                    if (item !== undefined && item !== null) {
+                        body.append(arrKey, item);
+                    }
+                });
+            } else {
+                body.append(k, val);
+            }
+        });
 
         try {
             var res = await fetch(url, {

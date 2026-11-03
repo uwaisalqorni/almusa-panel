@@ -21,7 +21,7 @@ PHP_VER="${4:-8.3}"
 REWRITE="${5:-default}"
 
 # Strict domain sanitization
-if [ "$ACTION" != "fix_permissions" ] && { [ -z "$DOMAIN" ] || ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; }; then
+if [ "$ACTION" != "fix_permissions" ] && [ "$ACTION" != "chmod_path" ] && { [ -z "$DOMAIN" ] || ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; }; then
     echo "[ERROR] Invalid domain name: '$DOMAIN'"
     exit 1
 fi
@@ -227,6 +227,32 @@ EOF
         echo "[SUCCESS] Permissions set: directories 0755, files 0644, user www-data:www-data."
         ;;
 
+    chmod_path)
+        TARGET_PATH="${3:-}"
+        PERMS="${4:-0755}"
+        RECURSIVE="${5:-0}"
+        if [ -z "$TARGET_PATH" ] || [ ! -e "$TARGET_PATH" ]; then
+            echo "[ERROR] Path '$TARGET_PATH' does not exist."
+            exit 1
+        fi
+        if ! SAFE_TARGET="$(canonical_wwwroot "$TARGET_PATH")"; then
+            echo "[ERROR] Refusing to modify permissions outside /www/wwwroot"
+            exit 1
+        fi
+        if ! [[ "$PERMS" =~ ^0?[1-7][0-7]{2}$ ]]; then
+            echo "[ERROR] Invalid octal permissions: '$PERMS'"
+            exit 1
+        fi
+        if [ "$RECURSIVE" = "1" ] && [ -d "$SAFE_TARGET" ]; then
+            chown -R www-data:www-data -- "$SAFE_TARGET" 2>/dev/null || true
+            chmod -R "$PERMS" -- "$SAFE_TARGET"
+        else
+            chown www-data:www-data -- "$SAFE_TARGET" 2>/dev/null || true
+            chmod "$PERMS" -- "$SAFE_TARGET"
+        fi
+        echo "[SUCCESS] Permissions updated to $PERMS for $SAFE_TARGET."
+        ;;
+
     clear_log)
         TYPE="${3:-all}"
         echo "[INFO] Clearing $TYPE log for $DOMAIN..."
@@ -240,7 +266,7 @@ EOF
         ;;
 
     *)
-        echo "Usage: $0 {create|switch_php|delete|save_conf|fix_permissions|clear_log} <domain> [docroot/src_file] [php_ver] [rewrite]"
+        echo "Usage: $0 {create|switch_php|delete|save_conf|fix_permissions|chmod_path|clear_log} <domain> [docroot/src_file] [php_ver/perms] [rewrite/recursive]"
         exit 1
         ;;
 esac
