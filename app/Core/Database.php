@@ -33,13 +33,31 @@ class Database
         return (get_current_user() === 'root' || getenv('USER') === 'root');
     }
 
+    /**
+     * User sistem pemilik data panel. Instalasi yang sudah dimigrasi memakai user
+     * khusus 'almusa' (terpisah dari www-data milik website); instalasi lama
+     * tetap memakai www-data.
+     */
+    public static function panelUser(): string
+    {
+        static $user = null;
+        if ($user === null) {
+            $user = (function_exists('posix_getpwnam') && @posix_getpwnam('almusa')) ? 'almusa' : 'www-data';
+        }
+        return $user;
+    }
+
     public static function fixPermissions(string $path, int $mode = 0660): void
     {
         if (file_exists($path)) {
+            if (self::panelUser() !== 'www-data') {
+                // Data panel tidak boleh bisa diakses user lain (termasuk www-data)
+                $mode &= 0770;
+            }
             @chmod($path, $mode);
             if (self::isRoot()) {
-                @chown($path, 'www-data');
-                @chgrp($path, 'www-data');
+                @chown($path, self::panelUser());
+                @chgrp($path, self::panelUser());
             }
         }
     }
@@ -58,8 +76,8 @@ class Database
             if (is_dir($dir)) {
                 @chmod($dir, 02770);
                 if (self::isRoot()) {
-                    @chown($dir, 'www-data');
-                    @chgrp($dir, 'www-data');
+                    @chown($dir, self::panelUser());
+                    @chgrp($dir, self::panelUser());
                 }
             }
 

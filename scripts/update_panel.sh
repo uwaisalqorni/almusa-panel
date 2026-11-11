@@ -112,7 +112,7 @@ if [ -d "${PANEL_ROOT}/.git" ] && git rev-parse --is-inside-work-tree >/dev/null
             echo -e "${YELLOW}[!] Mendeteksi file database terhapus/kosong pasca-reset. Memulihkan dari backup...${NC}"
             cp -p "$DB_BACKUP_FILE" "$DB_FILE"
             chmod 660 "$DB_FILE"
-            chown www-data:www-data "$DB_FILE" 2>/dev/null || true
+            chown "$(id almusa >/dev/null 2>&1 && echo almusa:almusa || echo www-data:www-data)" "$DB_FILE" 2>/dev/null || true
         fi
     fi
 
@@ -129,7 +129,12 @@ chmod +x "${PANEL_ROOT}/cli.sh" 2>/dev/null || true
 chmod +x "${PANEL_ROOT}/scripts/"*.sh 2>/dev/null || true
 find "${PANEL_ROOT}/plugins" -type f -name "*.sh" -exec chmod +x {} + 2>/dev/null || true
 
-if [ -d "${PANEL_ROOT}/data" ]; then
+if [ -f "${PANEL_ROOT}/scripts/harden_isolation.sh" ]; then
+    # Terapkan ulang isolasi user (kode milik root, data milik almusa, dst).
+    # Worker di-restart oleh stage 5 di bawah, bukan oleh skrip ini.
+    ALMUSA_TASK_CONTEXT=1 bash "${PANEL_ROOT}/scripts/harden_isolation.sh" \
+        || echo -e "${YELLOW}[!] harden_isolation.sh gagal, periksa log di atas.${NC}"
+elif [ -d "${PANEL_ROOT}/data" ]; then
     chown -R www-data:www-data "${PANEL_ROOT}/data" 2>/dev/null || true
     chmod 2770 "${PANEL_ROOT}/data" 2>/dev/null || true
     find "${PANEL_ROOT}/data" -maxdepth 1 -type f -exec chmod 660 {} + 2>/dev/null || true

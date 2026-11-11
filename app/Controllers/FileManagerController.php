@@ -11,6 +11,79 @@ class FileManagerController
     /**
      * Normalizes filesystem paths to use forward slashes and strips null bytes.
      */
+    /**
+     * Masukkan task ke antrean root worker (task.php). Pengganti sudo: proses web
+     * panel tidak pernah punya hak root secara langsung.
+     */
+    private function queueRootTask(string $action, array $payload, string $title): int
+    {
+        $pdo = Database::getInstance();
+        $pdo->prepare("INSERT INTO tasks (title, action, payload, status) VALUES (:title, :action, :payload, 'pending')")
+            ->execute([':title' => $title, ':action' => $action, ':payload' => json_encode($payload)]);
+        return (int)$pdo->lastInsertId();
+    }
+
+    /**
+     * Tunggu task selesai. Mengembalikan [exitCode|null jika timeout, output log].
+     */
+    private function waitForTask(int $taskId, int $timeoutSeconds = 45): array
+    {
+        // Lepas lock sesi agar request lain dari user yang sama tidak tertahan
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+
+        $pdo = Database::getInstance();
+        $check = $pdo->prepare("SELECT status, exit_code FROM tasks WHERE id = :id");
+        $deadline = microtime(true) + $timeoutSeconds;
+        $exitCode = null;
+        while (microtime(true) < $deadline) {
+            $check->execute([':id' => $taskId]);
+            $row = $check->fetch();
+            $check->closeCursor();
+            $status = (string)($row['status'] ?? '');
+            if ($status === 'completed' || $status === 'failed') {
+                $exitCode = (int)($row['exit_code'] ?? 1);
+                break;
+            }
+            usleep(300000);
+        }
+
+        $output = '';
+        if ($exitCode !== null) {
+            $logFile = (defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2)) . '/data/panelExec.log';
+            $size = (int)@filesize($logFile);
+            $log = @file_get_contents($logFile, false, null, max(0, $size - 65536));
+            if ($log !== false) {
+                $pos = strrpos($log, "[TASK #{$taskId}]");
+                if ($pos !== false) {
+                    $output = trim(substr($log, $pos, 4000));
+                }
+            }
+        }
+        return [$exitCode, $output];
+    }
+
+    /**
+     * Jalankan operasi file ber-hak root (fix_permissions / chmod_path / extract_archive)
+     * melalui worker. $wait=false = fire-and-forget.
+     */
+    private function runRootFsHelper(string $sub, array $args, array $site, bool $wait = true, int $timeout = 45): bool
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            return false;
+        }
+        $domain = !empty($site['is_root_storage']) ? 'wwwroot' : preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($site['domain'] ?? 'wwwroot'));
+        $payload = array_merge(['sub' => $sub, 'domain' => $domain ?: 'wwwroot'], $args);
+        $target = (string)($args['path'] ?? $args['dest'] ?? '');
+        $taskId = $this->queueRootTask('fs_helper', $payload, "File Manager: {$sub} {$target}");
+        if (!$wait) {
+            return true;
+        }
+        [$exitCode] = $this->waitForTask($taskId, $timeout);
+        return $exitCode === 0;
+    }
+
     private function normalizePath(string $path): string
     {
         $path = str_replace(["\0", '\\'], ['', '/'], $path);
@@ -74,10 +147,7 @@ class FileManagerController
         }
         if (is_dir($defaultRootPath) && !is_writable($defaultRootPath)) {
             @chmod($defaultRootPath, 0775);
-            $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
-            if (PHP_OS_FAMILY !== 'Windows' && is_file($script)) {
-                @exec("sudo " . escapeshellarg($script) . " fix_permissions wwwroot " . escapeshellarg($defaultRootPath) . " 2>&1");
-            }
+            $this->runRootFsHelper('fix_permissions', ['path' => $defaultRootPath], ['is_root_storage' => true], false);
         }
 
         if (empty($allSites)) {
@@ -484,18 +554,25 @@ class FileManagerController
 
         if ($isNginx) {
             $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)$site['domain']);
-            $tmpFile = sys_get_temp_dir() . "/almusa_nginx_save_{$domain}_" . time() . ".conf";
-            if (@file_put_contents($tmpFile, $content) === false) {
+            // Staging di direktori privat panel (bukan /tmp) dengan nama acak,
+            // lalu diterapkan oleh root worker lewat antrean task (tanpa sudo).
+            $tmpFile = panel_staging_path('nginx_' . $domain, '.conf');
+            if (@file_put_contents($tmpFile, $content, LOCK_EX) === false) {
                 Response::json(['success' => false, 'error' => 'Gagal membuat file staging sementara.'], 500);
             }
-            @chmod($tmpFile, 0644);
+            @chmod($tmpFile, 0600);
 
-            $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
-            $cmd = "sudo " . escapeshellarg($script) . " save_conf " . escapeshellarg($domain) . " " . escapeshellarg($tmpFile) . " 2>&1";
-            exec($cmd, $outputLines, $exitCode);
+            $taskId = $this->queueRootTask('vhost_save_conf', ['domain' => $domain, 'src_file' => $tmpFile], "Simpan Konfigurasi Nginx: {$domain}");
+            [$exitCode, $output] = $this->waitForTask($taskId, 45);
+
+            if ($exitCode === null) {
+                Response::json([
+                    'success' => true,
+                    'message' => "Perubahan konfigurasi Nginx untuk {$domain} sudah masuk antrean (Task #{$taskId}). Pantau hasilnya di log task.",
+                ]);
+            }
+
             @unlink($tmpFile);
-
-            $output = implode("\n", $outputLines);
 
             if ($exitCode === 0) {
                 Response::json([
@@ -688,7 +765,7 @@ class FileManagerController
     }
 
     /**
-     * Applies chmod permissions to a single path or recursively, falling back to sudo vhost_manager.sh if needed.
+     * Applies chmod permissions to a single path or recursively, falling back to the root worker if needed.
      */
     private function applyChmodToPath(string $target, string $perms, bool $recursive, array $site): bool
     {
@@ -723,16 +800,9 @@ class FileManagerController
             }
         }
 
-        if (!$ok && PHP_OS_FAMILY !== 'Windows') {
-            $domain = !empty($site['is_root_storage']) ? 'wwwroot' : preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($site['domain'] ?? 'wwwroot'));
-            $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
-            if (is_file($script)) {
-                $cmd = "sudo " . escapeshellarg($script) . " chmod_path " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($target) . " " . escapeshellarg($paddedPerms) . " " . ($recursive ? '1' : '0') . " 2>&1";
-                exec($cmd, $out, $ret);
-                if ($ret === 0) {
-                    $ok = true;
-                }
-            }
+        if (!$ok) {
+            // File milik user lain (mis. dibuat website sebagai www-data): chmod lewat root worker
+            $ok = $this->runRootFsHelper('chmod_path', ['path' => $target, 'perms' => $paddedPerms, 'recursive' => $recursive], $site);
         }
 
         clearstatcache(true, $target);
@@ -1522,13 +1592,11 @@ class FileManagerController
                     }
                 }
                 exec(escapeshellarg($tarBin) . " -xf " . escapeshellarg($zipPath) . " -C " . escapeshellarg($destDir) . " 2>&1", $tarOut, $tarRet);
-                if ($tarRet !== 0 && PHP_OS_FAMILY !== 'Windows' && is_file($script)) {
-                    exec("sudo " . escapeshellarg($script) . " extract_archive " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($zipPath) . " " . escapeshellarg($destDir) . " 2>&1", $sudoTarOut, $tarRet);
+                if ($tarRet !== 0 && $this->runRootFsHelper('extract_archive', ['archive' => $zipPath, 'dest' => $destDir], $site, true, 300)) {
+                    $tarRet = 0;
                 }
                 if ($tarRet === 0) {
-                    if (PHP_OS_FAMILY !== 'Windows' && is_file($script)) {
-                        @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($destDir) . " 2>&1");
-                    }
+                    $this->runRootFsHelper('fix_permissions', ['path' => $destDir], $site, false);
                     Response::json([
                         'success'     => true,
                         'message'     => 'Arsip berhasil diekstrak dan seluruh permission berkas telah diperbarui.',
@@ -1639,14 +1707,8 @@ class FileManagerController
         }
 
         // ENGINE 4: Root Helper Fallback via vhost_manager.sh (handles root-owned overwrite conflicts & auto-installs unzip if missing)
-        if (!$extractedSuccess && PHP_OS_FAMILY !== 'Windows' && function_exists('exec') && is_file($script)) {
-            $sudoCmd = "sudo " . escapeshellarg($script) . " extract_archive " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($zipPath) . " " . escapeshellarg($destDir) . " 2>&1";
-            exec($sudoCmd, $sudoOut, $sudoRet);
-            if ($sudoRet === 0) {
-                $extractedSuccess = true;
-            } elseif (empty($extractionError) && !empty($sudoOut)) {
-                $extractionError = implode(' ', array_slice($sudoOut, -2));
-            }
+        if (!$extractedSuccess && $this->runRootFsHelper('extract_archive', ['archive' => $zipPath, 'dest' => $destDir], $site, true, 300)) {
+            $extractedSuccess = true;
         }
 
         if (!$extractedSuccess) {
@@ -1658,9 +1720,7 @@ class FileManagerController
         }
 
         // Fix permissions automatically on all extracted files & folders
-        if (PHP_OS_FAMILY !== 'Windows' && is_file($script)) {
-            @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($destDir) . " 2>&1");
-        }
+        $this->runRootFsHelper('fix_permissions', ['path' => $destDir], $site, false);
 
         Response::json([
             'success'     => true,
@@ -1724,7 +1784,7 @@ class FileManagerController
     }
 
     /**
-     * Ensures target directory is writable by www-data, triggering self-healing if needed.
+     * Ensures target directory is writable by the panel user, triggering self-healing if needed.
      */
     private function ensureWritable(string $dir, array $site): void
     {
@@ -1738,14 +1798,7 @@ class FileManagerController
             return;
         }
 
-        if (PHP_OS_FAMILY !== 'Windows') {
-            $domain = !empty($site['is_root_storage']) ? 'wwwroot' : preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($site['domain'] ?? 'wwwroot'));
-            $script = defined('PANEL_ROOT') ? PANEL_ROOT . '/scripts/vhost_manager.sh' : dirname(__DIR__, 2) . '/scripts/vhost_manager.sh';
-
-            if (is_file($script)) {
-                @exec("sudo " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain ?: 'wwwroot') . " " . escapeshellarg($dir) . " 2>&1");
-            }
-        }
+        $this->runRootFsHelper('fix_permissions', ['path' => $dir], $site, true, 30);
 
         @chmod($dir, 0775);
         clearstatcache(true, $dir);

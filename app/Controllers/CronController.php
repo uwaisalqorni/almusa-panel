@@ -8,16 +8,89 @@ use App\Core\Response;
 
 class CronController
 {
+    /**
+     * Direktori log cron. Pada instalasi yang sudah dipisah user-nya, log ditaruh di
+     * /var/log/almusa-cron (bisa ditulis job www-data) agar folder data/ panel
+     * tidak perlu bisa diakses www-data.
+     */
+    public static function logsDir(): string
+    {
+        if (is_dir('/var/log/almusa-cron')) {
+            return '/var/log/almusa-cron';
+        }
+        $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
+        $dir = $panelRoot . '/data/cron_logs';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0770, true);
+        }
+        return $dir;
+    }
+
+    private static function logFile(int $id): string
+    {
+        return self::logsDir() . "/cron_{$id}.log";
+    }
+
+    /**
+     * User yang boleh menjalankan cron. User panel sengaja tidak termasuk.
+     */
+    private static function normalizeRunAsUser(string $user): string
+    {
+        if (in_array($user, ['www-data', 'root'], true)) {
+            return $user;
+        }
+        // User website terisolasi (web_<slug>) yang benar-benar ada di sistem
+        if (preg_match('/^web_[a-z0-9]{2,20}$/', $user) && function_exists('posix_getpwnam') && @posix_getpwnam($user)) {
+            return $user;
+        }
+        return 'www-data';
+    }
+
+    /**
+     * Daftar user website terisolasi beserta folder project-nya (dari pool PHP-FPM).
+     * @return array<int, array{user: string, project: string, domain: string}>
+     */
+    public static function siteUsers(): array
+    {
+        $result = [];
+        foreach (glob('/etc/php/*/fpm/pool.d/site-*.conf') ?: [] as $pool) {
+            $txt = (string)@file_get_contents($pool);
+            if (preg_match('/^user\s*=\s*(web_[a-z0-9]{2,20})\s*$/m', $txt, $u)) {
+                preg_match('/^; almusa-project = (.+)$/m', $txt, $p);
+                preg_match('/^; almusa-domain = (.+)$/m', $txt, $d);
+                $result[] = ['user' => $u[1], 'project' => trim($p[1] ?? ''), 'domain' => trim($d[1] ?? '')];
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Job sebagai root = eksekusi perintah bebas sebagai root. Wajib konfirmasi
+     * password panel agar sesi yang dicuri tidak langsung berarti root.
+     */
+    private static function requirePasswordConfirmation(): void
+    {
+        $password = (string)($_POST['confirm_password'] ?? '');
+        $userId = Auth::id();
+        if ($password === '' || !$userId) {
+            Response::json(['success' => false, 'error' => 'Menjalankan tugas sebagai root wajib konfirmasi password panel.', 'need_password' => true], 403);
+        }
+        $stmt = Database::getInstance()->prepare("SELECT password_hash FROM users WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $userId]);
+        $hash = (string)($stmt->fetchColumn() ?: '');
+        if ($hash === '' || !password_verify($password, $hash)) {
+            \App\Core\RateLimiter::logSecurity('WARN', 'Konfirmasi password gagal untuk aksi cron root dari IP ' . \App\Core\RateLimiter::clientIp());
+            Response::json(['success' => false, 'error' => 'Password konfirmasi salah.', 'need_password' => true], 403);
+        }
+    }
+
     public function index(): void
     {
         $pdo = Database::getInstance();
         $cronJobs = $pdo->query("SELECT * FROM cron_jobs ORDER BY id DESC")->fetchAll();
 
         $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
-        $logsDir = $panelRoot . '/data/cron_logs';
-        if (!is_dir($logsDir)) {
-            @mkdir($logsDir, 0777, true);
-        }
+        $logsDir = self::logsDir();
 
         foreach ($cronJobs as &$job) {
             $job['human_expr'] = self::describeExpression($job['expression']);
@@ -28,7 +101,7 @@ class CronController
         unset($job);
 
         // Fetch hosted websites for easy command presets
-        $sites = $pdo->query("SELECT id, domain, docroot FROM sites ORDER BY domain ASC")->fetchAll();
+        $sites = $pdo->query("SELECT id, domain, docroot, php_version, app_type FROM sites ORDER BY domain ASC")->fetchAll();
 
         // System cron file info
         $cronSystemFile = '/etc/cron.d/almusa-cron';
@@ -45,6 +118,7 @@ class CronController
             'cronJobs'         => $cronJobs,
             'sites'            => $sites,
             'cronSystemStatus' => $cronSystemStatus,
+            'siteUsers'        => self::siteUsers(),
         ]);
     }
 
@@ -69,10 +143,9 @@ class CronController
             Response::json(['success' => false, 'error' => 'Format cron expression tidak valid. Gunakan 5 bagian standar (cth: * * * * * atau 0 0 * * *).'], 422);
         }
 
-        $currentUser = get_current_user() ?: 'www-data';
-        $validUsers = array_unique(['www-data', 'root', $currentUser]);
-        if (!in_array($runAsUser, $validUsers, true) && !@posix_getpwnam($runAsUser)) {
-            $runAsUser = 'www-data';
+        $runAsUser = self::normalizeRunAsUser($runAsUser);
+        if ($runAsUser === 'root') {
+            self::requirePasswordConfirmation();
         }
 
         $pdo = Database::getInstance();
@@ -131,10 +204,9 @@ class CronController
             Response::json(['success' => false, 'error' => 'Format cron expression tidak valid.'], 422);
         }
 
-        $currentUser = get_current_user() ?: 'www-data';
-        $validUsers = array_unique(['www-data', 'root', $currentUser]);
-        if (!in_array($runAsUser, $validUsers, true) && !@posix_getpwnam($runAsUser)) {
-            $runAsUser = 'www-data';
+        $runAsUser = self::normalizeRunAsUser($runAsUser);
+        if ($runAsUser === 'root') {
+            self::requirePasswordConfirmation();
         }
 
         $update = $pdo->prepare("
@@ -206,7 +278,7 @@ class CronController
         $del->execute([':id' => $id]);
 
         $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
-        $logFile = $panelRoot . "/data/cron_logs/cron_{$id}.log";
+        $logFile = self::logFile($id);
         if (file_exists($logFile)) {
             @unlink($logFile);
         }
@@ -236,47 +308,65 @@ class CronController
         }
 
         $command = $job['command'];
-        $user = $job['run_as_user'] ?? 'www-data';
-        $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
-        $logFile = $panelRoot . "/data/cron_logs/cron_{$id}.log";
+        $user = self::normalizeRunAsUser((string)($job['run_as_user'] ?? 'www-data'));
+        $logFile = self::logFile($id);
+
+        if ($user === 'root') {
+            self::requirePasswordConfirmation();
+        }
 
         $startTime = microtime(true);
 
-        // Run command and capture output
-        $descriptorspec = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
+        // Eksekusi lewat root worker (task.php -> cron_manager.sh run) agar perintah
+        // benar-benar berjalan sebagai user target, bukan sebagai user panel.
+        $pdo->prepare("INSERT INTO tasks (title, action, payload, status) VALUES (:title, 'cron_run', :payload, 'pending')")
+            ->execute([
+                ':title'   => "Run Now Cron #{$id}: " . mb_substr((string)$job['name'], 0, 60) . " (user: {$user})",
+                ':payload' => json_encode(['user' => $user, 'command' => $command]),
+            ]);
+        $taskId = (int)$pdo->lastInsertId();
 
-        // Format execution command based on target user
-        if ($user === 'root') {
-            // If root needed, run via task runner or su
-            $execCmd = "bash -c " . escapeshellarg($command);
-        } else {
-            $execCmd = "su -s /bin/bash - " . escapeshellarg($user) . " -c " . escapeshellarg($command) . " 2>&1";
-            // If current process user matches target user, run directly without su
-            $currentUser = function_exists('posix_getpwuid') ? (@posix_getpwuid(posix_geteuid())['name'] ?? get_current_user()) : get_current_user();
-            if ($currentUser === $user) {
-                $execCmd = $command;
-            }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
         }
 
-        $output = '';
-        $exitCode = 0;
+        $exitCode = null;
+        $check = $pdo->prepare("SELECT status, exit_code FROM tasks WHERE id = :id");
+        $deadline = microtime(true) + 300;
+        while (microtime(true) < $deadline) {
+            $check->execute([':id' => $taskId]);
+            $row = $check->fetch();
+            $check->closeCursor();
+            if (in_array($row['status'] ?? '', ['completed', 'failed'], true)) {
+                $exitCode = (int)($row['exit_code'] ?? 1);
+                break;
+            }
+            usleep(500000);
+        }
 
-        $proc = @proc_open($execCmd, $descriptorspec, $pipes);
-        if (is_resource($proc)) {
-            fclose($pipes[0]);
-            $stdout = stream_get_contents($pipes[1]);
-            $stderr = stream_get_contents($pipes[2]);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            $exitCode = proc_close($proc);
-            $output = trim($stdout . "\n" . $stderr);
-        } else {
-            $output = "Gagal memulai proses eksekusi.";
-            $exitCode = 1;
+        if ($exitCode === null) {
+            Response::json([
+                'success'   => true,
+                'exit_code' => null,
+                'duration'  => '-',
+                'output'    => "Tugas masih berjalan di background (Task #{$taskId}).",
+                'message'   => "Tugas sedang dijalankan di background (Task #{$taskId}). Pantau di log task.",
+            ]);
+        }
+
+        // Ambil output dari log eksekusi worker (tanpa banner)
+        $output = '';
+        $panelLog = (defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2)) . '/data/panelExec.log';
+        $log = @file_get_contents($panelLog, false, null, max(0, (int)@filesize($panelLog) - 131072));
+        if ($log !== false && ($pos = strrpos($log, "[TASK #{$taskId}]")) !== false) {
+            $chunk = substr($log, $pos);
+            if (($p = strpos($chunk, "[EXEC]")) !== false) {
+                $chunk = substr($chunk, (int)strpos($chunk, "\n", $p) + 1);
+            }
+            if (($p = strpos($chunk, "\n------------------------------------------------------\nFinished:")) !== false) {
+                $chunk = substr($chunk, 0, $p);
+            }
+            $output = trim(preg_replace('/^\[INFO\] Executing cron command as user .*$/m', '', $chunk));
         }
 
         $duration = number_format(microtime(true) - $startTime, 2) . 's';
@@ -323,7 +413,7 @@ class CronController
         }
 
         $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
-        $logFile = $panelRoot . "/data/cron_logs/cron_{$id}.log";
+        $logFile = self::logFile($id);
 
         if (!file_exists($logFile) || filesize($logFile) === 0) {
             Response::json([
@@ -354,10 +444,13 @@ class CronController
         $id = (int)($_POST['id'] ?? 0);
 
         $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
-        $logFile = $panelRoot . "/data/cron_logs/cron_{$id}.log";
+        $logFile = self::logFile($id);
 
         if (file_exists($logFile)) {
-            @file_put_contents($logFile, '');
+            // File log bisa dimiliki www-data/root (ditulis oleh cron); hapus jika tak bisa dikosongkan
+            if (@file_put_contents($logFile, '') === false) {
+                @unlink($logFile);
+            }
         }
 
         Response::json([
@@ -375,10 +468,7 @@ class CronController
         $jobs = $pdo->query("SELECT * FROM cron_jobs WHERE is_enabled = 1 ORDER BY id ASC")->fetchAll();
 
         $panelRoot = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__, 2);
-        $logsDir = $panelRoot . '/data/cron_logs';
-        if (!is_dir($logsDir)) {
-            @mkdir($logsDir, 0777, true);
-        }
+        $logsDir = self::logsDir();
 
         $stagingFile = $panelRoot . '/data/almusa-cron.staging';
 

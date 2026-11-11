@@ -49,3 +49,22 @@ if (!function_exists('asset_url')) {
     }
 }
 
+
+if (!function_exists('panel_staging_path')) {
+    /**
+     * Path acak di direktori staging privat panel (data/staging, mode 0700).
+     * Dipakai untuk file yang akan diproses root worker; jangan pakai /tmp
+     * (nama mudah ditebak & bisa dibajak user lain lewat symlink).
+     */
+    function panel_staging_path(string $prefix, string $suffix = ''): string
+    {
+        $root = defined('PANEL_ROOT') ? PANEL_ROOT : dirname(__DIR__);
+        $dir = $root . '/data/staging';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0700, true);
+        }
+        @chmod($dir, 0700);
+        $safePrefix = preg_replace('/[^a-zA-Z0-9_\-\.]/', '', $prefix);
+        return $dir . '/' . $safePrefix . '_' . bin2hex(random_bytes(8)) . $suffix;
+    }
+}

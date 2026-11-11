@@ -103,8 +103,9 @@ case "$ACTION" in
 
         # Prepare webroot ACME challenge directory
         mkdir -p "${DOCROOT}/.well-known/acme-challenge"
-        chown -R www-data:www-data "${DOCROOT}/.well-known" 2>/dev/null || true
-        chmod -R 755 "${DOCROOT}/.well-known" 2>/dev/null || true
+        # shellcheck source=lib/site_perms.sh
+        source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/lib/site_perms.sh"
+        apply_site_perms "${DOCROOT}/.well-known"
 
         # Run Certbot ACME Webroot verification
         echo "[INFO] Executing certbot certonly..."

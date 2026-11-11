@@ -17,8 +17,8 @@ use App\Core\Database;
 $logFile = (defined('PANEL_ROOT') ? PANEL_ROOT : __DIR__) . '/data/panelExec.log';
 if (!file_exists($logFile)) {
     @touch($logFile);
-    @chmod($logFile, 0666);
 }
+Database::fixPermissions($logFile, 0660);
 $running = true;
 
 // Signal handlers for graceful shutdown
@@ -142,7 +142,7 @@ function buildSanitizedCommand(string $action, array $payload): ?string
     $root = PANEL_ROOT;
 
     // Tolak traversal pada semua field bertipe path sebelum diproses lebih lanjut
-    foreach (['docroot', 'path', 'project_path', 'src_file', 'file', 'cert_file', 'key_file'] as $pathKey) {
+    foreach (['docroot', 'path', 'project_path', 'src_file', 'file', 'cert_file', 'key_file', 'archive', 'dest'] as $pathKey) {
         if (isset($payload[$pathKey]) && is_string($payload[$pathKey]) && hasTraversal($payload[$pathKey])) {
             return null;
         }
@@ -274,11 +274,43 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             return "bash " . escapeshellarg($script) . " sync " . ($srcFile ? escapeshellarg($srcFile) : '');
 
         case 'cron_run':
-            $user = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['user'] ?? 'www-data'));
+            $user = (string)($payload['user'] ?? 'www-data');
+            // Hanya www-data atau root; user panel (almusa) dilarang agar job tidak bisa membaca data panel
+            if (!in_array($user, ['www-data', 'root'], true)
+                && !(preg_match('/^web_[a-z0-9]{2,20}$/', $user) && function_exists('posix_getpwnam') && posix_getpwnam($user))) {
+                return null;
+            }
             $cmd = (string)($payload['command'] ?? '');
             $script = "{$root}/scripts/cron_manager.sh";
             if (!file_exists($script) || empty($cmd)) return null;
             return "bash " . escapeshellarg($script) . " run " . escapeshellarg($user) . " " . escapeshellarg($cmd);
+
+        case 'fs_helper':
+            // Operasi file yang butuh root untuk file manager (pengganti sudo).
+            // vhost_manager.sh membatasi semua path ke dalam /www/wwwroot.
+            $script = "{$root}/scripts/vhost_manager.sh";
+            if (!file_exists($script)) return null;
+            $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? '')) ?: 'wwwroot';
+            $sub = (string)($payload['sub'] ?? '');
+            if ($sub === 'fix_permissions') {
+                $p = (string)($payload['path'] ?? '');
+                if ($p === '') return null;
+                return "bash " . escapeshellarg($script) . " fix_permissions " . escapeshellarg($domain) . " " . escapeshellarg($p);
+            }
+            if ($sub === 'chmod_path') {
+                $p = (string)($payload['path'] ?? '');
+                $perms = (string)($payload['perms'] ?? '');
+                if ($p === '' || !preg_match('/^0?[0-7]{3}$/', $perms)) return null;
+                $rec = !empty($payload['recursive']) ? '1' : '0';
+                return "bash " . escapeshellarg($script) . " chmod_path " . escapeshellarg($domain) . " " . escapeshellarg($p) . " " . escapeshellarg($perms) . " " . $rec;
+            }
+            if ($sub === 'extract_archive') {
+                $arc = (string)($payload['archive'] ?? '');
+                $dest = (string)($payload['dest'] ?? '');
+                if ($arc === '' || $dest === '') return null;
+                return "bash " . escapeshellarg($script) . " extract_archive " . escapeshellarg($domain) . " " . escapeshellarg($arc) . " " . escapeshellarg($dest);
+            }
+            return null;
 
         case 'fix_permissions':
             $targetPath = (string)($payload['path'] ?? '');

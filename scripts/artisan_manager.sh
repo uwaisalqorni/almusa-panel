@@ -103,13 +103,18 @@ mkdir -p "${REAL_PATH}/storage/framework/cache" \
          "${REAL_PATH}/storage/logs" \
          "${REAL_PATH}/bootstrap/cache" 2>/dev/null || true
 
-chown -R www-data:www-data "${REAL_PATH}/storage" "${REAL_PATH}/bootstrap/cache" 2>/dev/null || true
-chmod -R 775 "${REAL_PATH}/storage" "${REAL_PATH}/bootstrap/cache" 2>/dev/null || true
+# shellcheck source=lib/site_perms.sh
+source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/lib/site_perms.sh"
+RUN_USER="$(site_run_user_of "$REAL_PATH")"
 
-# Execute as www-data to prevent root ownership of logs or cache
+apply_site_perms "${REAL_PATH}/storage"
+apply_site_perms "${REAL_PATH}/bootstrap/cache"
+
+# Jalankan sebagai pemilik website (web_<slug> atau www-data), bukan root
 cd "${REAL_PATH}"
 if [ "$(id -u)" -eq 0 ]; then
-    su -s /bin/bash www-data -c "cd $(printf '%q' "$REAL_PATH") && $(printf '%q' "$PHP_BIN") artisan $SAFE_CMD"
+    echo "[INFO] Menjalankan sebagai user: ${RUN_USER}"
+    su -s /bin/bash "$RUN_USER" -c "cd $(printf '%q' "$REAL_PATH") && $(printf '%q' "$PHP_BIN") artisan $SAFE_CMD"
 else
     "$PHP_BIN" artisan $SAFE_CMD
 fi
@@ -124,6 +129,7 @@ else
 fi
 
 # Ensure permissions remain clean
-chown -R www-data:www-data "${REAL_PATH}/storage" "${REAL_PATH}/bootstrap/cache" 2>/dev/null || true
+apply_site_perms "${REAL_PATH}/storage"
+apply_site_perms "${REAL_PATH}/bootstrap/cache"
 
 exit $EXIT_CODE

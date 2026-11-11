@@ -353,7 +353,10 @@ case "$ACTION" in
         if [ -f "$POOL_CONF" ]; then
             sed -i -E "s|^;?\s*listen\s*=.*|listen = /run/php/php${VERSION}-fpm.sock|g" "$POOL_CONF" 2>/dev/null || true
             sed -i -E "s|^;?\s*listen\.owner\s*=.*|listen.owner = www-data|g" "$POOL_CONF" 2>/dev/null || true
-            sed -i -E "s|^;?\s*listen\.group\s*=.*|listen.group = www-data|g" "$POOL_CONF" 2>/dev/null || true
+            # Socket hanya bisa disambungi nginx (user 'nginx' bila sudah dipisah dari www-data)
+            SOCK_GROUP="www-data"
+            id nginx >/dev/null 2>&1 && SOCK_GROUP="nginx"
+            sed -i -E "s|^;?\s*listen\.group\s*=.*|listen.group = ${SOCK_GROUP}|g" "$POOL_CONF" 2>/dev/null || true
             sed -i -E "s|^;?\s*listen\.mode\s*=.*|listen.mode = 0660|g" "$POOL_CONF" 2>/dev/null || true
         fi
 

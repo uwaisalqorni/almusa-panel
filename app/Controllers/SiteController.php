@@ -550,8 +550,8 @@ class SiteController
             Response::json(['success' => false, 'error' => 'Private Key tidak cocok dengan Sertifikat SSL yang dimasukkan!'], 400);
         }
 
-        // Write to staging files in /tmp with strict permissions
-        $tmpDir = sys_get_temp_dir() . '/almusa_ssl_' . uniqid();
+        // Write to private panel staging dir (not /tmp) with strict permissions
+        $tmpDir = panel_staging_path('ssl');
         if (!@mkdir($tmpDir, 0700, true)) {
             Response::json(['success' => false, 'error' => 'Gagal membuat direktori staging sementara.'], 500);
         }

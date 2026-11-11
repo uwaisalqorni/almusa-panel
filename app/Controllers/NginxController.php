@@ -161,11 +161,11 @@ class NginxController
         }
 
         // Staging file
-        $tmpFile = "/tmp/almusa_nginx_save_" . time() . ".conf";
-        if (@file_put_contents($tmpFile, $content) === false) {
+        $tmpFile = panel_staging_path('nginx_save', '.conf');
+        if (@file_put_contents($tmpFile, $content, LOCK_EX) === false) {
             Response::json(['success' => false, 'error' => 'Gagal membuat file staging sementara.'], 500);
         }
-        @chmod($tmpFile, 0644);
+        @chmod($tmpFile, 0600);
 
         // Enqueue background task for root daemon
         $pdo = Database::getInstance();
@@ -194,11 +194,11 @@ class NginxController
         $tmpFile = '';
 
         if (!empty($content)) {
-            $tmpFile = "/tmp/almusa_nginx_test_" . time() . ".conf";
-            if (@file_put_contents($tmpFile, $content) === false) {
+            $tmpFile = panel_staging_path('nginx_test', '.conf');
+            if (@file_put_contents($tmpFile, $content, LOCK_EX) === false) {
                 Response::json(['success' => false, 'error' => 'Gagal membuat file staging tes.'], 500);
             }
-            @chmod($tmpFile, 0644);
+            @chmod($tmpFile, 0600);
         }
 
         $pdo = Database::getInstance();

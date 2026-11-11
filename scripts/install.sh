@@ -627,15 +627,9 @@ if [ -f /www/panel/config/cloudflare-realip.conf ]; then
     ln -sf /www/panel/config/cloudflare-realip.conf /etc/nginx/conf.d/cloudflare-realip.conf
 fi
 
-# Hak eksekusi vhost_manager.sh untuk user worker/panel tanpa password
-PANEL_USER=$(stat -c '%U' /www/panel 2>/dev/null || echo "www-data")
-if [ "$PANEL_USER" = "root" ]; then
-    PANEL_USER="www-data"
-fi
-if [ "$PANEL_USER" != "root" ]; then
-    echo "${PANEL_USER} ALL=(ALL) NOPASSWD: /www/panel/scripts/vhost_manager.sh, $(readlink -f /www/panel)/scripts/vhost_manager.sh" > /etc/sudoers.d/almusa-panel
-    chmod 0440 /etc/sudoers.d/almusa-panel
-fi
+# Panel web TIDAK diberi sudo: semua aksi root lewat antrean task (task.php).
+# Hapus aturan sudoers lama dari instalasi versi sebelumnya bila masih ada.
+rm -f /etc/sudoers.d/almusa-panel
 
 # Daftarkan dedicated PHP-FPM service untuk panel
 cat << EOF > /etc/systemd/system/mypanel-web.service
@@ -677,15 +671,16 @@ EOF
 
 systemctl daemon-reload
 systemctl enable mypanel-web.service 2>/dev/null || true
-systemctl restart mypanel-web.service 2>/dev/null || true
 systemctl enable mypanel-worker.service 2>/dev/null || true
-systemctl restart mypanel-worker.service 2>/dev/null || true
 
-# Pastikan kepemilikan direktori /run/php dan socket website pengguna selalu www-data:www-data
+# Isolasi user: panel (almusa) / nginx (nginx) / website (www-data), kode milik root.
+# Skrip ini juga me-restart mypanel-web & mypanel-worker.
+bash /www/panel/scripts/harden_isolation.sh
+
+# Direktori runtime socket PHP-FPM (izin socket diatur per pool: listen.owner/group/mode)
 mkdir -p /run/php
 chown www-data:www-data /run/php
 chmod 755 /run/php
-chmod 660 /run/php/*.sock 2>/dev/null || true
 ACTIVE_PHP_VER=$(${PHP_CLI_BIN:-php} -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;' 2>/dev/null || echo "")
 if [ -n "$ACTIVE_PHP_VER" ] && systemctl list-unit-files "php${ACTIVE_PHP_VER}-fpm.service" >/dev/null 2>&1; then
     if ! systemctl is-active --quiet "php${ACTIVE_PHP_VER}-fpm" 2>/dev/null; then

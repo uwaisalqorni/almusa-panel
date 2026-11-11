@@ -242,7 +242,10 @@
                         <label class="label" for="cronUser">Eksekusi Sebagai User</label>
                         <select id="cronUser" class="select">
                             <option value="www-data" selected>www-data (Web Server / Aplikasi Standar)</option>
-                            <option value="root">root (Hak Akses Penuh Sistem)</option>
+                            <?php foreach (($siteUsers ?? []) as $su): ?>
+                            <option value="<?= e($su['user']) ?>"><?= e($su['user']) ?> (website <?= e($su['domain']) ?>)</option>
+                            <?php endforeach; ?>
+                            <option value="root">root (Hak Akses Penuh Sistem, wajib konfirmasi password)</option>
                         </select>
                     </div>
 
@@ -325,7 +328,8 @@
 </div>
 
 <script>
-var sitesList = <?= json_encode($sites) ?>;
+var sitesList = <?= json_encode($sites, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+var siteUsersList = <?= json_encode($siteUsers ?? [], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 var currentViewingCronId = null;
 
 var scheduleExpressions = {
@@ -386,10 +390,26 @@ function applyPresetTemplate(type) {
     var sitePath = defaultSite ? defaultSite.docroot : '/www/wwwroot/domain.com';
 
     if (type === 'laravel') {
-        nameInput.value = 'Laravel Artisan Scheduler' + (defaultSite ? ' (' + defaultSite.domain + ')' : '');
+        // Hanya situs Laravel yang punya artisan; pakai folder project (tanpa /public)
+        // dan binary PHP sesuai versi situs.
+        var laravelSites = sitesList.filter(function (s) { return s.app_type === 'laravel'; });
+        if (laravelSites.length === 0) {
+            Almusa.toast('Tidak ada website bertipe Laravel. Preset artisan hanya untuk aplikasi Laravel.', 'warning');
+            return;
+        }
+        var ls = laravelSites[0];
+        var projectRoot = String(ls.docroot || ('/www/wwwroot/' + ls.domain)).replace(/\/public\/?$/i, '');
+        var phpBin = '/usr/bin/php' + (ls.php_version || '8.3');
+        nameInput.value = 'Laravel Artisan Scheduler (' + ls.domain + ')';
         typeSelect.value = 'every_minute';
         exprInput.value = '* * * * *';
-        cmdInput.value = '/usr/bin/php8.3 ' + sitePath + '/artisan schedule:run';
+        cmdInput.value = phpBin + ' ' + projectRoot + '/artisan schedule:run';
+        // Website terisolasi: jalankan sebagai user website-nya, bukan www-data
+        var su = siteUsersList.find(function (u) { return u.project === projectRoot || u.domain === ls.domain; });
+        document.getElementById('cronUser').value = su ? su.user : 'www-data';
+        if (laravelSites.length > 1) {
+            Almusa.toast('Preset diisi untuk ' + ls.domain + '. Ubah path jika ingin untuk website Laravel lain.', 'info');
+        }
     } else if (type === 'wordpress') {
         nameInput.value = 'WordPress WP-Cron' + (defaultSite ? ' (' + defaultSite.domain + ')' : '');
         typeSelect.value = 'hourly';
@@ -440,6 +460,23 @@ function closeCronModal() {
     Almusa.closeModal('cronModal');
 }
 
+// Aksi cron sebagai root wajib konfirmasi password panel (server membalas need_password)
+async function postCronWithConfirm(url, payload) {
+    var res = await Almusa.post(url, payload);
+    if (res && res.need_password) {
+        var pwd = await Almusa.prompt({
+            title: 'Konfirmasi Password',
+            message: (res.error || 'Tugas ini berjalan sebagai root.') + ' Masukkan password panel Anda untuk melanjutkan.',
+            label: 'Password Panel',
+            type: 'password',
+            confirmText: 'Konfirmasi'
+        });
+        if (pwd === null) return { success: false, error: 'Dibatalkan.' };
+        res = await Almusa.post(url, Object.assign({}, payload, { confirm_password: pwd }));
+    }
+    return res;
+}
+
 async function submitCronForm(e) {
     e.preventDefault();
     var id = document.getElementById('cronId').value;
@@ -459,7 +496,7 @@ async function submitCronForm(e) {
     if (id) payload.id = id;
 
     try {
-        var res = await Almusa.post(endpoint, payload);
+        var res = await postCronWithConfirm(endpoint, payload);
         if (res.success) {
             closeCronModal();
             Almusa.reload(res.message, 'success', 800);
@@ -513,14 +550,14 @@ async function deleteCronJob(id, name) {
 async function runCronNow(id, name, btn) {
     var restore = Almusa.busy(btn);
     try {
-        var res = await Almusa.post('/api/cron/run-now', { id: id });
+        var res = await postCronWithConfirm('/api/cron/run-now', { id: id });
         restore();
 
         if (res.success) {
             document.getElementById('cronRunTitle').textContent = 'Uji Eksekusi: ' + name;
             var badge = document.getElementById('cronRunBadge');
-            badge.className = 'badge ' + (res.exit_code === 0 ? 'badge-success' : 'badge-danger');
-            badge.textContent = 'Exit Code: ' + res.exit_code;
+            badge.className = 'badge ' + (res.exit_code === 0 ? 'badge-success' : (res.exit_code === null ? 'badge-neutral' : 'badge-danger'));
+            badge.textContent = res.exit_code === null ? 'Berjalan di background' : 'Exit Code: ' + res.exit_code;
             document.getElementById('cronRunDuration').textContent = 'Durasi: ' + res.duration;
             document.getElementById('cronRunOutput').textContent = res.output;
 

@@ -13,6 +13,13 @@ while [ -h "$SOURCE" ]; do
   [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 PANEL_ROOT="$( cd -P "$( dirname "$SOURCE" )/.." >/dev/null 2>&1 && pwd )"
+# shellcheck source=lib/site_perms.sh
+source "${PANEL_ROOT}/scripts/lib/site_perms.sh"
+
+# Pool PHP-FPM per-website (dibuat scripts/site_isolation.sh) untuk domain ini, jika ada
+site_pool_for_domain() {
+    grep -lsE "^; almusa-domain = ${1//./\\.}\s*$" /etc/php/*/fpm/pool.d/site-*.conf 2>/dev/null | head -1 || true
+}
 
 ACTION="${1:-}"
 DOMAIN="${2:-}"
@@ -92,6 +99,7 @@ case "$ACTION" in
 </html>
 EOF
             chown -R www-data:www-data "$DOCROOT" 2>/dev/null || true
+            chmod -R g+w "$DOCROOT" 2>/dev/null || true
         fi
 
         # Determine PHP socket path
@@ -239,8 +247,28 @@ EOF
                 systemctl enable --now "php${PHP_VER}-fpm" 2>/dev/null || systemctl restart "php${PHP_VER}-fpm" 2>/dev/null || true
             fi
         fi
-        PHP_SOCK="unix:\/run\/php\/php${PHP_VER}-fpm.sock"
-        sed -i -E "s|fastcgi_pass unix:/run/php/php[0-9.]+-fpm.sock;|fastcgi_pass ${PHP_SOCK};|g" "$CONF_FILE"
+        SITE_POOL="$(site_pool_for_domain "$DOMAIN")"
+        if [ -n "$SITE_POOL" ]; then
+            # Website terisolasi: socket per-website tetap sama, cukup pindahkan pool ke versi PHP baru
+            OLD_VER="$(echo "$SITE_POOL" | cut -d/ -f4)"
+            NEW_POOL="/etc/php/${PHP_VER}/fpm/pool.d/$(basename "$SITE_POOL")"
+            if [ "$OLD_VER" != "$PHP_VER" ]; then
+                [ -d "/etc/php/${PHP_VER}/fpm/pool.d" ] || { echo "[ERROR] PHP-FPM ${PHP_VER} belum terpasang."; exit 1; }
+                echo "[INFO] Memindahkan pool $(basename "$SITE_POOL") dari PHP ${OLD_VER} ke ${PHP_VER}..."
+                mv -f "$SITE_POOL" "$NEW_POOL"
+                if ! "php-fpm${PHP_VER}" -t >/dev/null 2>&1; then
+                    mv -f "$NEW_POOL" "$SITE_POOL"
+                    echo "[ERROR] Konfigurasi PHP-FPM ${PHP_VER} tidak valid. Dibatalkan."
+                    exit 1
+                fi
+                # Lepas socket dari versi lama dulu, lalu versi baru membuatnya kembali
+                systemctl reload "php${OLD_VER}-fpm" 2>/dev/null || true
+                systemctl reload "php${PHP_VER}-fpm" 2>/dev/null || systemctl restart "php${PHP_VER}-fpm"
+            fi
+        else
+            PHP_SOCK="unix:\/run\/php\/php${PHP_VER}-fpm.sock"
+            sed -i -E "s|fastcgi_pass unix:/run/php/php[0-9.]+-fpm.sock;|fastcgi_pass ${PHP_SOCK};|g" "$CONF_FILE"
+        fi
 
         if command -v nginx >/dev/null 2>&1; then
             echo "[INFO] Testing Nginx configuration..."
@@ -257,6 +285,13 @@ EOF
         LOCAL_PORT="${5:-0}"
         echo "[INFO] Deleting Virtual Host for $DOMAIN..."
         rm -f "$LINK_FILE" "$CONF_FILE"
+
+        SITE_POOL="$(site_pool_for_domain "$DOMAIN")"
+        if [ -n "$SITE_POOL" ]; then
+            echo "[INFO] Removing per-site PHP-FPM pool $(basename "$SITE_POOL")..."
+            rm -f "$SITE_POOL"
+            systemctl reload "php$(echo "$SITE_POOL" | cut -d/ -f4)-fpm" 2>/dev/null || true
+        fi
 
         # Remove UFW firewall rule if LAN port was allocated
         if command -v ufw >/dev/null 2>&1 && [ -n "$LOCAL_PORT" ] && [ "$LOCAL_PORT" -gt 0 ]; then
@@ -333,12 +368,10 @@ EOF
             echo "[ERROR] Refusing to modify permissions outside /www/wwwroot"
             exit 1
         fi
-        chown -R www-data:www-data -- "$SAFE_TARGET" 2>/dev/null || true
-        chmod 0775 "$SAFE_TARGET" 2>/dev/null || true
-        find "$SAFE_TARGET" -type d -exec chmod 0755 {} + 2>/dev/null || true
-        find "$SAFE_TARGET" -type f -exec chmod 0644 {} + 2>/dev/null || true
-        [ "$SAFE_TARGET" = "/www/wwwroot" ] && chmod 0775 /www/wwwroot 2>/dev/null || true
-        echo "[SUCCESS] Permissions set: directories 0755, files 0644, user www-data:www-data."
+        # Pemilik mengikuti project (web_<slug> bila terisolasi, selain itu www-data);
+        # grup bisa tulis agar panel (almusa) tetap bisa mengelola file.
+        apply_site_perms "$SAFE_TARGET"
+        echo "[SUCCESS] Permissions set for $SAFE_TARGET (owner: $(site_owner_of "$SAFE_TARGET"))."
         ;;
 
     chmod_path)
@@ -358,10 +391,10 @@ EOF
             exit 1
         fi
         if [ "$RECURSIVE" = "1" ] && [ -d "$SAFE_TARGET" ]; then
-            chown -R www-data:www-data -- "$SAFE_TARGET" 2>/dev/null || true
+            apply_site_owner "$SAFE_TARGET" 1
             chmod -R "$PERMS" -- "$SAFE_TARGET"
         else
-            chown www-data:www-data -- "$SAFE_TARGET" 2>/dev/null || true
+            apply_site_owner "$SAFE_TARGET" 0
             chmod "$PERMS" -- "$SAFE_TARGET"
         fi
         echo "[SUCCESS] Permissions updated to $PERMS for $SAFE_TARGET."
@@ -414,10 +447,7 @@ EOF
                 exit 1
                 ;;
         esac
-        chown -R www-data:www-data -- "$SAFE_DEST" 2>/dev/null || true
-        find "$SAFE_DEST" -type d -exec chmod 0755 {} + 2>/dev/null || true
-        find "$SAFE_DEST" -type f -exec chmod 0644 {} + 2>/dev/null || true
-        [ "$SAFE_DEST" = "/www/wwwroot" ] && chmod 0775 /www/wwwroot 2>/dev/null || true
+        apply_site_perms "$SAFE_DEST"
         echo "[SUCCESS] Archive extracted to $SAFE_DEST."
         ;;
 

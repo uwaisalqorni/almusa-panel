@@ -6,18 +6,26 @@ set -e
 
 ACTION="${1:-}"
 BACKUP_DIR="/www/backup"
+# shellcheck source=lib/site_perms.sh
+source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/lib/site_perms.sh"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
-# Resolve dynamic owner for backups (default www-data:www-data)
-BACKUP_OWNER=$(stat -c '%U:%G' /www/panel 2>/dev/null || echo "www-data:www-data")
-if [[ "$BACKUP_OWNER" =~ root:root ]]; then
+# Pemilik backup = user panel. Backup berisi dump database & source website,
+# jadi TIDAK boleh bisa dibaca www-data (user website) maupun user lain.
+if id almusa >/dev/null 2>&1; then
+    BACKUP_OWNER="almusa:almusa"
+    FILE_MODE=0640
+    DIR_MODE=2750
+else
     BACKUP_OWNER="www-data:www-data"
+    FILE_MODE=0644
+    DIR_MODE=0755
 fi
 
 # Ensure backup directory exists with correct permissions
 mkdir -p "$BACKUP_DIR"
 chown "$BACKUP_OWNER" "$BACKUP_DIR" 2>/dev/null || true
-chmod 0755 "$BACKUP_DIR"
+chmod "$DIR_MODE" "$BACKUP_DIR"
 
 # Resolve MySQL root password
 MYSQL_ROOT_PASS="${MYSQL_PWD:-}"
@@ -52,7 +60,7 @@ case "$ACTION" in
             "$DB_NAME" | gzip -c > "$OUTPUT_FILE"
 
         chown "$BACKUP_OWNER" "$OUTPUT_FILE" 2>/dev/null || true
-        chmod 0644 "$OUTPUT_FILE"
+        chmod "$FILE_MODE" "$OUTPUT_FILE"
         SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
         echo "[SUCCESS] Database snapshot created successfully! Size: ${SIZE} | File: ${OUTPUT_FILE}"
         ;;
@@ -74,7 +82,7 @@ case "$ACTION" in
             --default-character-set=utf8mb4 | gzip -c > "$OUTPUT_FILE"
 
         chown "$BACKUP_OWNER" "$OUTPUT_FILE" 2>/dev/null || true
-        chmod 0644 "$OUTPUT_FILE"
+        chmod "$FILE_MODE" "$OUTPUT_FILE"
         SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
         echo "[SUCCESS] All databases snapshot created successfully! Size: ${SIZE} | File: ${OUTPUT_FILE}"
         ;;
@@ -99,6 +107,10 @@ case "$ACTION" in
             OUTPUT_FILE="${BACKUP_DIR}/site_${CLEAN_DOMAIN}_${TIMESTAMP}.tar.gz"
         fi
 
+        # Docroot bisa berupa symlink (mis. /www/wwwroot/SiDispo -> sidispo): resolve dulu,
+        # kalau tidak tar hanya menyimpan symlink-nya dan arsip jadi kosong.
+        DOCROOT="$(readlink -f -- "$DOCROOT")"
+
         # If docroot points to public/ inside a project, archive the project root
         TARGET_DIR="$DOCROOT"
         PARENT_DIR=$(dirname "$DOCROOT")
@@ -117,7 +129,7 @@ case "$ACTION" in
             -C "$PARENT_DIR" "$FOLDER_NAME"
 
         chown "$BACKUP_OWNER" "$OUTPUT_FILE" 2>/dev/null || true
-        chmod 0644 "$OUTPUT_FILE"
+        chmod "$FILE_MODE" "$OUTPUT_FILE"
         SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
         echo "[SUCCESS] Website archive created successfully! Size: ${SIZE} | File: ${OUTPUT_FILE}"
         ;;
@@ -135,7 +147,7 @@ case "$ACTION" in
             -C /www wwwroot
 
         chown "$BACKUP_OWNER" "$OUTPUT_FILE" 2>/dev/null || true
-        chmod 0644 "$OUTPUT_FILE"
+        chmod "$FILE_MODE" "$OUTPUT_FILE"
         SIZE=$(du -h "$OUTPUT_FILE" | cut -f1)
         echo "[SUCCESS] All websites archive created successfully! Size: ${SIZE} | File: ${OUTPUT_FILE}"
         ;;
@@ -214,13 +226,8 @@ case "$ACTION" in
             tar -xzf "$BACKUP_FILE" -C "$TARGET_DIR"
         fi
 
-        chown -R www-data:www-data "$TARGET_DIR" 2>/dev/null || true
-        chmod -R 0755 "$TARGET_DIR"
-        [ -d "$TARGET_DIR/storage" ] && chmod -R 0775 "$TARGET_DIR/storage" 2>/dev/null || true
-        [ -d "$TARGET_DIR/bootstrap/cache" ] && chmod -R 0775 "$TARGET_DIR/bootstrap/cache" 2>/dev/null || true
-        [ -d "$TARGET_DIR/database" ] && chmod -R 0775 "$TARGET_DIR/database" 2>/dev/null || true
-        [ -d "$TARGET_DIR/var/cache" ] && chmod -R 0775 "$TARGET_DIR/var/cache" 2>/dev/null || true
-        [ -d "$TARGET_DIR/var/log" ] && chmod -R 0775 "$TARGET_DIR/var/log" 2>/dev/null || true
+        # Pemilik & izin mengikuti model project (web_<slug> terisolasi atau www-data)
+        apply_site_perms "$TARGET_DIR"
         echo "[SUCCESS] Website files restored successfully into '${TARGET_DIR}'!"
         ;;
 
