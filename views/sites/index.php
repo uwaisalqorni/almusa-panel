@@ -86,11 +86,23 @@ $rewriteLabels = [
                             </span>
                         </td>
                         <td>
+                            <?php if (!empty($site['local_port'])): ?>
+                                <div style="margin-bottom: 5px;">
+                                    <a href="http://<?= htmlspecialchars($serverIp ?? '192.168.0.17') ?>:<?= (int)$site['local_port'] ?>" target="_blank" rel="noopener" class="badge no-dot" style="cursor: pointer; text-decoration: none; font-size: 11px; padding: 2px 7px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;" title="Akses langsung via IP LAN Kantor (WiFi)">
+                                        <?= ui_icon('wifi') ?> LAN: :<?= (int)$site['local_port'] ?> <?= ui_icon('external') ?>
+                                    </a>
+                                </div>
+                            <?php endif; ?>
                             <?php if (!empty($site['tunnel_url'])): ?>
-                                <a href="<?= e($site['tunnel_url']) ?>" target="_blank" rel="noopener" class="cell-link">
-                                    <span class="truncate"><?= e(preg_replace('#^https?://#', '', $site['tunnel_url'])) ?></span>
-                                    <?= ui_icon('external') ?>
-                                </a>
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <a href="<?= e($site['tunnel_url']) ?>" target="_blank" rel="noopener" class="cell-link" style="margin: 0;">
+                                        <span class="truncate"><?= e(preg_replace('#^https?://#', '', $site['tunnel_url'])) ?></span>
+                                        <?= ui_icon('external') ?>
+                                    </a>
+                                    <button type="button" class="btn btn-ghost btn-sm" style="padding: 2px 6px; font-size: 11px;" onclick="showQrCodeModal(<?= js_arg($site['tunnel_url']) ?>, <?= js_arg($site['domain']) ?>)" title="Scan QR Code di Smartphone">
+                                        <?= ui_icon('maximize') ?> QR
+                                    </button>
+                                </div>
                             <?php else: ?>
                                 <button type="button" class="btn btn-secondary btn-sm"
                                         onclick="startQuickTunnel(<?= (int)$site['id'] ?>, <?= js_arg($site['domain']) ?>, this)">
@@ -154,6 +166,16 @@ $rewriteLabels = [
         </div>
         <form id="addSiteForm" onsubmit="submitAddSite(event)">
             <div class="modal-body">
+                <div class="field">
+                    <label class="label" for="siteAppType">Tipe Aplikasi / Preset Framework</label>
+                    <select id="siteAppType" class="select" onchange="onAppTypeChange(this.value)">
+                        <option value="php" selected>PHP Generic / Native (HTML/CSS/PHP)</option>
+                        <option value="laravel">Laravel Framework (Auto /public docroot, storage:link, permissions)</option>
+                        <option value="wordpress">WordPress (Auto Rewrite & Security)</option>
+                        <option value="spa">Single Page App / Vite / Vue / React</option>
+                    </select>
+                    <div class="help">Memilih preset akan otomatis menyesuaikan Document Root, URL Rewrite, dan hak akses folder.</div>
+                </div>
                 <div class="field">
                     <label class="label" for="siteDomain">Nama domain</label>
                     <input type="text" id="siteDomain" class="input" placeholder="contoh: app.domain.com" required autocomplete="off">
@@ -350,7 +372,8 @@ async function submitAddSite(e) {
             domain: document.getElementById('siteDomain').value.trim(),
             docroot: document.getElementById('siteDocroot').value.trim(),
             php_version: document.getElementById('sitePhp').value,
-            rewrite_template: document.getElementById('siteRewrite').value
+            rewrite_template: document.getElementById('siteRewrite').value,
+            app_type: document.getElementById('siteAppType') ? document.getElementById('siteAppType').value : 'php'
         });
         if (data.success) {
             closeAddSiteModal();
@@ -363,6 +386,26 @@ async function submitAddSite(e) {
     } catch (err) {
         Almusa.toast('Terjadi kesalahan jaringan.', 'error');
         restore();
+    }
+}
+
+function onAppTypeChange(type) {
+    var domainInput = document.getElementById('siteDomain');
+    var docrootInput = document.getElementById('siteDocroot');
+    var rewriteSelect = document.getElementById('siteRewrite');
+    var d = domainInput.value.trim() || 'app.domain.com';
+
+    if (type === 'laravel') {
+        if (!docrootInput.value || docrootInput.value.indexOf('/public') === -1) {
+            docrootInput.value = '/www/wwwroot/' + d + '/public';
+        }
+        if (rewriteSelect) rewriteSelect.value = 'laravel';
+    } else if (type === 'wordpress') {
+        if (rewriteSelect) rewriteSelect.value = 'wordpress';
+    } else {
+        if (docrootInput.value && docrootInput.value.endsWith('/public')) {
+            docrootInput.value = docrootInput.value.replace(/\/public$/, '');
+        }
     }
 }
 
@@ -1901,7 +1944,9 @@ document.addEventListener('DOMContentLoaded', function () {
         domInput.addEventListener('input', function () {
             if (!docInput.dataset.manual) {
                 var val = this.value.trim().toLowerCase().replace(/[^a-z0-9.-]/g, '');
-                docInput.value = val ? ('/www/wwwroot/' + val) : '';
+                var appType = document.getElementById('siteAppType') ? document.getElementById('siteAppType').value : 'php';
+                var suffix = (appType === 'laravel') ? '/public' : '';
+                docInput.value = val ? ('/www/wwwroot/' + val + suffix) : '';
             }
         });
         docInput.addEventListener('input', function () {
@@ -1914,4 +1959,54 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 });
 
+function showQrCodeModal(url, domain) {
+    if (!url) return;
+    var title = document.getElementById('qrModalTitle');
+    if (title) title.textContent = domain ? ('QR Code: ' + domain) : 'Pindai QR Code';
+    var inp = document.getElementById('qrUrlInput');
+    if (inp) inp.value = url;
+    var btn = document.getElementById('qrOpenBtn');
+    if (btn) btn.href = url;
+    var img = document.getElementById('qrCodeImg');
+    if (img) img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=1&data=' + encodeURIComponent(url);
+    Almusa.openModal('qrCodeModal');
+}
+
+function copyQrUrl() {
+    var inp = document.getElementById('qrUrlInput');
+    if (inp && inp.value) {
+        navigator.clipboard.writeText(inp.value).then(function () {
+            Almusa.toast('Tautan berhasil disalin ke clipboard!', 'success');
+        }).catch(function () {
+            inp.select();
+            document.execCommand('copy');
+            Almusa.toast('Tautan berhasil disalin!', 'success');
+        });
+    }
+}
 </script>
+
+<!-- Modal QR Code -->
+<div class="modal-backdrop" id="qrCodeModal">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle" style="text-align: center;">
+        <div class="modal-header">
+            <div>
+                <h2 class="modal-title" id="qrModalTitle">Pindai QR Code</h2>
+                <p class="modal-subtitle">Akses website langsung dari kamera smartphone</p>
+            </div>
+            <button type="button" class="icon-btn" onclick="Almusa.closeModal('qrCodeModal')" aria-label="Tutup"><?= ui_icon('x') ?></button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px;">
+            <div id="qrCodeContainer" style="background: #fff; padding: 12px; border-radius: var(--radius-md); box-shadow: 0 4px 16px rgba(0,0,0,0.15);">
+                <img id="qrCodeImg" src="" alt="QR Code" style="width: 200px; height: 200px; display: block;">
+            </div>
+            <div style="width: 100%;">
+                <input type="text" id="qrUrlInput" class="input mono" readonly style="text-align: center; font-size: 11.5px; width: 100%;" onclick="this.select()">
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content: center; gap: 10px;">
+            <button type="button" class="btn btn-secondary" onclick="copyQrUrl()"><?= ui_icon('copy') ?> Salin Tautan</button>
+            <a id="qrOpenBtn" href="#" target="_blank" rel="noopener" class="btn btn-primary"><?= ui_icon('external') ?> Buka di Tab Baru</a>
+        </div>
+    </div>
+</div>

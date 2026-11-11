@@ -110,14 +110,15 @@ class CloudflareApi
             'service'  => $service,
         ];
 
-        $originRequest = [];
+        $originRequest = [
+            'noTLSVerify'    => true,
+            'connectTimeout' => 30,
+        ];
         if (!empty($httpHostHeader)) {
             $originRequest['httpHostHeader'] = $httpHostHeader;
         }
 
-        if (!empty($originRequest)) {
-            $newRule['originRequest'] = $originRequest;
-        }
+        $newRule['originRequest'] = $originRequest;
 
         array_unshift($filtered, $newRule);
 
@@ -189,5 +190,49 @@ class CloudflareApi
         }
 
         return true;
+    }
+
+    public function deleteDnsCname(string $zoneId, string $hostname): bool
+    {
+        $endpoint = "/zones/{$zoneId}/dns_records?name=" . urlencode($hostname) . "&type=CNAME";
+        $records = $this->request('GET', $endpoint);
+
+        if (!empty($records[0]['id'])) {
+            $recordId = $records[0]['id'];
+            $this->request('DELETE', "/zones/{$zoneId}/dns_records/{$recordId}");
+        }
+
+        return true;
+    }
+
+    public function createTunnel(string $tunnelName = 'almusa-server-tunnel'): array
+    {
+        if (empty($this->apiToken) || empty($this->accountId)) {
+            throw new \Exception("Cloudflare API Token dan Account ID wajib dikonfigurasi.");
+        }
+
+        $secret = base64_encode(random_bytes(32));
+        $endpoint = "/accounts/{$this->accountId}/cfd_tunnel";
+        $payload = [
+            'name'          => $tunnelName,
+            'tunnel_secret' => $secret,
+        ];
+
+        $result = $this->request('POST', $endpoint, $payload);
+        $tunnelId = $result['id'] ?? '';
+
+        // Dapatkan tunnel token untuk daemon systemd cloudflared
+        $token = '';
+        try {
+            $tokenEndpoint = "/accounts/{$this->accountId}/cfd_tunnel/{$tunnelId}/token";
+            $tokenResult = $this->request('GET', $tokenEndpoint);
+            $token = is_string($tokenResult) ? $tokenResult : ($tokenResult['token'] ?? '');
+        } catch (\Throwable $e) {}
+
+        return [
+            'tunnel_id' => $tunnelId,
+            'name'      => $tunnelName,
+            'token'     => $token,
+        ];
     }
 }

@@ -183,17 +183,20 @@ function buildSanitizedCommand(string $action, array $payload): ?string
             $docroot = preg_replace('/[^a-zA-Z0-9_\.\/\-]/', '', (string)($payload['docroot'] ?? ''));
             $phpVer = preg_replace('/[^0-9\.]/', '', (string)($payload['php_version'] ?? '8.3'));
             $rewrite = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['rewrite'] ?? 'default'));
+            $localPort = (int)($payload['local_port'] ?? 0);
+            $appType = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($payload['app_type'] ?? 'php'));
             $script = "{$root}/scripts/vhost_manager.sh";
             if (!file_exists($script)) return null;
-            return "bash " . escapeshellarg($script) . " create " . escapeshellarg($domain) . " " . escapeshellarg($docroot) . " " . escapeshellarg($phpVer) . " " . escapeshellarg($rewrite);
+            return "bash " . escapeshellarg($script) . " create " . escapeshellarg($domain) . " " . escapeshellarg($docroot) . " " . escapeshellarg($phpVer) . " " . escapeshellarg($rewrite) . " " . escapeshellarg((string)$localPort) . " " . escapeshellarg($appType);
 
         case 'vhost_delete':
             $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));
             $docroot = preg_replace('/[^a-zA-Z0-9_\.\/\-]/', '', (string)($payload['docroot'] ?? ''));
             $deleteFiles = !empty($payload['delete_files']) ? '1' : '0';
+            $localPort = (int)($payload['local_port'] ?? 0);
             $script = "{$root}/scripts/vhost_manager.sh";
             if (!file_exists($script)) return null;
-            return "bash " . escapeshellarg($script) . " delete " . escapeshellarg($domain) . " " . escapeshellarg($docroot) . " " . escapeshellarg($deleteFiles);
+            return "bash " . escapeshellarg($script) . " delete " . escapeshellarg($domain) . " " . escapeshellarg($docroot) . " " . escapeshellarg($deleteFiles) . " " . escapeshellarg((string)$localPort);
 
         case 'vhost_switch_php':
             $domain = preg_replace('/[^a-zA-Z0-9\.\-]/', '', (string)($payload['domain'] ?? ''));

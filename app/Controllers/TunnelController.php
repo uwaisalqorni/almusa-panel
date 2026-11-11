@@ -164,4 +164,86 @@ class TunnelController
             Response::json(['success' => false, 'error' => $e->getMessage()], 500);
         }
     }
+
+    public function customUnpublish(): void
+    {
+        $siteId = (int)($_POST['site_id'] ?? 0);
+
+        $pdo = Database::getInstance();
+        $stmt = $pdo->prepare("SELECT * FROM sites WHERE id = :id LIMIT 1");
+        $stmt->execute([':id' => $siteId]);
+        $site = $stmt->fetch();
+
+        if (!$site) {
+            Response::json(['success' => false, 'error' => 'Website tidak ditemukan.'], 404);
+        }
+
+        $tunnelStmt = $pdo->prepare("SELECT public_hostname FROM tunnels WHERE site_id = :id AND tunnel_type = 'custom' LIMIT 1");
+        $tunnelStmt->execute([':id' => $siteId]);
+        $rawHost = (string)$tunnelStmt->fetchColumn();
+        $hostname = preg_replace('#^https?://#', '', $rawHost);
+
+        if (!empty($hostname)) {
+            try {
+                $cfApi = new CloudflareApi();
+                if ($cfApi->isConfigured()) {
+                    $cfApi->removePublicHostname($hostname);
+                    $zoneId = $cfApi->getZoneId($hostname);
+                    if ($zoneId) {
+                        $cfApi->deleteDnsCname($zoneId, $hostname);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Non-fatal, continue DB cleanup
+            }
+        }
+
+        // Clean up DB
+        $del = $pdo->prepare("DELETE FROM tunnels WHERE site_id = :sid");
+        $del->execute([':sid' => $siteId]);
+
+        $upd = $pdo->prepare("UPDATE sites SET tunnel_mode = 'none', tunnel_url = '' WHERE id = :id");
+        $upd->execute([':id' => $siteId]);
+
+        Response::json([
+            'success' => true,
+            'message' => "Publikasi domain Zero Trust untuk {$site['domain']} berhasil dicabut.",
+        ]);
+    }
+
+    public function setupTunnel(): void
+    {
+        $tunnelName = trim($_POST['tunnel_name'] ?? 'almusa-server-tunnel');
+        $cfApi = new CloudflareApi();
+
+        try {
+            $created = $cfApi->createTunnel($tunnelName);
+            $tunnelId = $created['tunnel_id'];
+            $token = $created['token'];
+
+            Database::setSetting('cf_tunnel_id', $tunnelId);
+            if (!empty($token)) {
+                Database::setSetting('cf_tunnel_token', $token);
+                // Dispatch task to save token and start cloudflared service
+                $pdo = Database::getInstance();
+                $task = $pdo->prepare("
+                    INSERT INTO tasks (title, action, payload, status)
+                    VALUES (:title, 'cron_run', :payload, 'pending')
+                ");
+                $cmd = "mkdir -p /etc/cloudflared && echo '{$token}' > /etc/cloudflared/token && chmod 600 /etc/cloudflared/token && systemctl enable --now cloudflared 2>/dev/null || true";
+                $task->execute([
+                    ':title'   => 'Setup Cloudflare Zero Trust Daemon',
+                    ':payload' => json_encode(['user' => 'root', 'command' => $cmd]),
+                ]);
+            }
+
+            Response::json([
+                'success'   => true,
+                'message'   => "Tunnel Zero Trust '{$tunnelName}' berhasil dibuat dan terhubung ke server!",
+                'tunnel_id' => $tunnelId,
+            ]);
+        } catch (\Throwable $e) {
+            Response::json(['success' => false, 'error' => $e->getMessage()], 400);
+        }
+    }
 }

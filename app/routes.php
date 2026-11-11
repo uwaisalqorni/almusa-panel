@@ -93,6 +93,8 @@ Router::get('/tunnels', [TunnelController::class, 'index']);
 Router::post('/api/tunnels/quick-start', [TunnelController::class, 'quickStart']);
 Router::post('/api/tunnels/quick-stop', [TunnelController::class, 'quickStop']);
 Router::post('/api/tunnels/custom-publish', [TunnelController::class, 'customPublish']);
+Router::post('/api/tunnels/custom-unpublish', [TunnelController::class, 'customUnpublish']);
+Router::post('/api/tunnels/setup-tunnel', [TunnelController::class, 'setupTunnel']);
 
 // Cron Jobs Manager
 Router::get('/cron', [CronController::class, 'index']);

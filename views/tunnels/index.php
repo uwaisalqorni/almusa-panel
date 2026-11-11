@@ -115,12 +115,18 @@
                         <td>
                             <div class="cell-actions">
                                 <?php if ($tunnel['tunnel_type'] === 'quick'): ?>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="showQrCodeModal(<?= js_arg($href) ?>, <?= js_arg($tunnel['domain'] ?? '') ?>)" title="Scan QR Code di Smartphone">
+                                        <?= ui_icon('maximize') ?> QR
+                                    </button>
                                     <button type="button" class="btn btn-secondary btn-sm"
                                             onclick="stopQuickTunnel(<?= (int)$tunnel['site_id'] ?>, <?= (int)($tunnel['pid'] ?? 0) ?>, this)">
                                         <?= ui_icon('stop') ?> Hentikan
                                     </button>
                                 <?php else: ?>
-                                    <span class="text-3" style="font-size:12.5px">Dikelola via API</span>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="color:var(--danger); border-color: rgba(239,68,68,0.3);"
+                                            onclick="unpublishCustomDomain(<?= (int)$tunnel['site_id'] ?>, <?= js_arg($host) ?>, this)" title="Cabut domain dari Cloudflare Zero Trust">
+                                        <?= ui_icon('trash') ?> Cabut Domain
+                                    </button>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -292,4 +298,80 @@ async function submitCustomPublish(e) {
         restore();
     }
 }
+
+async function unpublishCustomDomain(siteId, hostname, btn) {
+    var ok = await Almusa.confirm({
+        title: 'Cabut Publikasi Domain',
+        message: 'Domain ' + hostname + ' akan dicabut dari Cloudflare Zero Trust dan DNS CNAME akan dihapus.',
+        confirmText: 'Ya, Cabut Domain',
+        danger: true
+    });
+    if (!ok) return;
+
+    var restore = btn ? Almusa.busy(btn, 'Mencabut…') : function () {};
+    try {
+        var data = await Almusa.post('/api/tunnels/custom-unpublish', { site_id: siteId });
+        if (data.success) {
+            Almusa.reload(data.message || 'Domain berhasil dicabut.', 'success');
+        } else {
+            Almusa.toast(data.error || 'Gagal mencabut domain.', 'error');
+            restore();
+        }
+    } catch (err) {
+        Almusa.toast('Terjadi kesalahan koneksi.', 'error');
+        restore();
+    }
+}
+
+function showQrCodeModal(url, domain) {
+    if (!url) return;
+    var title = document.getElementById('qrModalTitle');
+    if (title) title.textContent = domain ? ('QR Code: ' + domain) : 'Pindai QR Code';
+    var inp = document.getElementById('qrUrlInput');
+    if (inp) inp.value = url;
+    var btn = document.getElementById('qrOpenBtn');
+    if (btn) btn.href = url;
+    var img = document.getElementById('qrCodeImg');
+    if (img) img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=1&data=' + encodeURIComponent(url);
+    Almusa.openModal('qrCodeModal');
+}
+
+function copyQrUrl() {
+    var inp = document.getElementById('qrUrlInput');
+    if (inp && inp.value) {
+        navigator.clipboard.writeText(inp.value).then(function () {
+            Almusa.toast('Tautan berhasil disalin ke clipboard!', 'success');
+        }).catch(function () {
+            inp.select();
+            document.execCommand('copy');
+            Almusa.toast('Tautan berhasil disalin!', 'success');
+        });
+    }
+}
+</script>
+
+<!-- Modal QR Code -->
+<div class="modal-backdrop" id="qrCodeModal">
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="qrModalTitle" style="text-align: center;">
+        <div class="modal-header">
+            <div>
+                <h2 class="modal-title" id="qrModalTitle">Pindai QR Code</h2>
+                <p class="modal-subtitle">Akses website langsung dari kamera smartphone</p>
+            </div>
+            <button type="button" class="icon-btn" onclick="Almusa.closeModal('qrCodeModal')" aria-label="Tutup"><?= ui_icon('x') ?></button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px;">
+            <div id="qrCodeContainer" style="background: #fff; padding: 12px; border-radius: var(--radius-md); box-shadow: 0 4px 16px rgba(0,0,0,0.15);">
+                <img id="qrCodeImg" src="" alt="QR Code" style="width: 200px; height: 200px; display: block;">
+            </div>
+            <div style="width: 100%;">
+                <input type="text" id="qrUrlInput" class="input mono" readonly style="text-align: center; font-size: 11.5px; width: 100%;" onclick="this.select()">
+            </div>
+        </div>
+        <div class="modal-footer" style="justify-content: center; gap: 10px;">
+            <button type="button" class="btn btn-secondary" onclick="copyQrUrl()"><?= ui_icon('copy') ?> Salin Tautan</button>
+            <a id="qrOpenBtn" href="#" target="_blank" rel="noopener" class="btn btn-primary"><?= ui_icon('external') ?> Buka di Tab Baru</a>
+        </div>
+    </div>
+</div>
 </script>

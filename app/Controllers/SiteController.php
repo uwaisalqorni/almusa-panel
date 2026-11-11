@@ -79,6 +79,49 @@ class SiteController
         return $installed;
     }
 
+    /**
+     * Dapatkan IP LAN lokal server untuk akses uji coba
+     */
+    public static function detectServerIp(): string
+    {
+        $ipCmd = shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7}'");
+        $ipTrim = trim((string)$ipCmd);
+        if (!empty($ipTrim) && filter_var($ipTrim, FILTER_VALIDATE_IP)) {
+            return $ipTrim;
+        }
+        return $_SERVER['SERVER_ADDR'] ?? '192.168.0.17';
+    }
+
+    /**
+     * Alokasi port LAN unik otomatis untuk pengetesan lokal tanpa konflik
+     */
+    public static function getNextAvailableLocalPort(): int
+    {
+        $pdo = Database::getInstance();
+        $usedPorts = $pdo->query("SELECT local_port FROM sites WHERE local_port > 0")->fetchAll(\PDO::FETCH_COLUMN);
+        $usedPorts = array_map('intval', $usedPorts ?: []);
+        $usedPorts[] = 80;
+        $usedPorts[] = 443;
+        $usedPorts[] = 8088;
+        $usedPorts[] = 64448;
+
+        $port = 8089;
+        while (in_array($port, $usedPorts, true) || self::isPortInUse($port)) {
+            $port++;
+        }
+        return $port;
+    }
+
+    private static function isPortInUse(int $port): bool
+    {
+        $conn = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.2);
+        if (is_resource($conn)) {
+            fclose($conn);
+            return true;
+        }
+        return false;
+    }
+
     public function index(): void
     {
         $pdo = Database::getInstance();
@@ -93,6 +136,7 @@ class SiteController
 
         $installedPhpVersions = self::getInstalledPhpVersions();
         $rewrites = ['default', 'laravel', 'wordpress', 'thinkphp'];
+        $serverIp = self::detectServerIp();
 
         Response::view('sites/index', [
             'title'                => 'Websites & Virtual Hosts',
@@ -102,6 +146,7 @@ class SiteController
             'installedPhpVersions' => $installedPhpVersions,
             'phpVersions'          => $installedPhpVersions,
             'rewrites'             => $rewrites,
+            'serverIp'             => $serverIp,
         ]);
     }
 
@@ -111,6 +156,26 @@ class SiteController
         $docroot = trim($_POST['docroot'] ?? '');
         $phpVer = trim($_POST['php_version'] ?? '8.3');
         $rewrite = trim($_POST['rewrite_template'] ?? 'default');
+        $appType = strtolower(trim($_POST['app_type'] ?? 'php'));
+
+        if (!in_array($appType, ['php', 'laravel', 'wordpress', 'spa'], true)) {
+            $appType = 'php';
+        }
+
+        // Framework Auto-Presets
+        if ($appType === 'laravel') {
+            if (!empty($docroot)) {
+                $docrootClean = rtrim($docroot, '/');
+                if (!str_ends_with($docrootClean, '/public')) {
+                    $docroot = $docrootClean . '/public';
+                }
+            } else {
+                $docroot = "/www/wwwroot/{$domain}/public";
+            }
+            $rewrite = 'laravel';
+        } elseif ($appType === 'wordpress') {
+            $rewrite = 'wordpress';
+        }
 
         // Validation
         if (!preg_match('/^[a-zA-Z0-9\.\-]+$/', $domain) || strlen($domain) < 3) {
@@ -160,16 +225,21 @@ class SiteController
             Response::json(['success' => false, 'error' => "Domain '{$domain}' sudah terdaftar di panel."], 400);
         }
 
+        // Alokasi port LAN unik
+        $localPort = self::getNextAvailableLocalPort();
+
         // Insert into SQLite
         $insert = $pdo->prepare("
-            INSERT INTO sites (domain, docroot, php_version, rewrite_template, status)
-            VALUES (:domain, :docroot, :php, :rewrite, 'active')
+            INSERT INTO sites (domain, docroot, php_version, rewrite_template, local_port, app_type, status)
+            VALUES (:domain, :docroot, :php, :rewrite, :local_port, :app_type, 'active')
         ");
         $insert->execute([
-            ':domain'  => $domain,
-            ':docroot' => $docroot,
-            ':php'     => $phpVer,
-            ':rewrite' => $rewrite,
+            ':domain'     => $domain,
+            ':docroot'    => $docroot,
+            ':php'        => $phpVer,
+            ':rewrite'    => $rewrite,
+            ':local_port' => $localPort,
+            ':app_type'   => $appType,
         ]);
         $siteId = (int)$pdo->lastInsertId();
 
@@ -179,20 +249,23 @@ class SiteController
             VALUES (:title, 'vhost_create', :payload, 'pending')
         ");
         $task->execute([
-            ':title'   => "Buat Virtual Host: {$domain} (PHP {$phpVer})",
+            ':title'   => "Buat Virtual Host: {$domain} (PHP {$phpVer}, LAN :{$localPort})",
             ':payload' => json_encode([
                 'site_id'     => $siteId,
                 'domain'      => $domain,
                 'docroot'     => $docroot,
                 'php_version' => $phpVer,
                 'rewrite'     => $rewrite,
+                'local_port'  => $localPort,
+                'app_type'    => $appType,
             ]),
         ]);
 
         Response::json([
-            'success' => true,
-            'message' => "Website '{$domain}' berhasil didaftarkan. Konfigurasi Nginx sedang diproses di background.",
-            'site_id' => $siteId,
+            'success'    => true,
+            'message'    => "Website '{$domain}' berhasil didaftarkan. Port LAN :{$localPort} dialokasikan.",
+            'site_id'    => $siteId,
+            'local_port' => $localPort,
         ]);
     }
 
@@ -295,6 +368,7 @@ class SiteController
                 'domain'       => $domain,
                 'docroot'      => $docroot,
                 'delete_files' => $deleteFiles ? 1 : 0,
+                'local_port'   => (int)($site['local_port'] ?? 0),
             ]),
         ]);
 

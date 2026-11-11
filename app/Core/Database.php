@@ -127,6 +127,8 @@ class Database
             ssl_provider TEXT DEFAULT 'letsencrypt',
             tunnel_mode TEXT DEFAULT 'none',
             tunnel_url TEXT DEFAULT '',
+            local_port INTEGER DEFAULT 0,
+            app_type TEXT DEFAULT 'php',
             status TEXT DEFAULT 'active',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -229,6 +231,16 @@ SQL;
         // Migrate existing databases to add ssl_provider if missing
         try {
             $pdo->exec("ALTER TABLE sites ADD COLUMN ssl_provider TEXT DEFAULT 'letsencrypt'");
+        } catch (\Throwable $e) {}
+
+        // Migrate sites table to add local_port for LAN testing
+        try {
+            $pdo->exec("ALTER TABLE sites ADD COLUMN local_port INTEGER DEFAULT 0");
+        } catch (\Throwable $e) {}
+
+        // Migrate sites table to add app_type (php, laravel, wordpress, spa)
+        try {
+            $pdo->exec("ALTER TABLE sites ADD COLUMN app_type TEXT DEFAULT 'php'");
         } catch (\Throwable $e) {}
 
         // Migrate users table to add session_version for instant cross-device revocation

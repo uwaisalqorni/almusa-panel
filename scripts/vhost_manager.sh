@@ -19,6 +19,8 @@ DOMAIN="${2:-}"
 DOCROOT="${3:-}"
 PHP_VER="${4:-8.3}"
 REWRITE="${5:-default}"
+LOCAL_PORT="${6:-0}"
+APP_TYPE="${7:-php}"
 
 # Strict domain sanitization
 if [ "$ACTION" != "fix_permissions" ] && [ "$ACTION" != "chmod_path" ] && [ "$ACTION" != "extract_archive" ] && { [ -z "$DOMAIN" ] || ! [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; }; then
@@ -124,6 +126,91 @@ EOF
             -e "s|{{ERROR_LOG}}|${ERROR_LOG}|g" \
             "$TEMPLATE" > "$CONF_FILE"
 
+        # Dedicated LAN Local Testing Server Block
+        if [ -n "$LOCAL_PORT" ] && [ "$LOCAL_PORT" -gt 0 ]; then
+            SERVER_LAN_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7}' || hostname -I 2>/dev/null | awk '{print $1}')
+            [ -z "$SERVER_LAN_IP" ] && SERVER_LAN_IP="192.168.0.17"
+
+            cat << EOF >> "$CONF_FILE"
+
+# ==============================================================================
+# Port ${LOCAL_PORT}: Dedicated Local LAN Access (${SERVER_LAN_IP}:${LOCAL_PORT})
+# ==============================================================================
+server {
+    listen ${LOCAL_PORT} default_server;
+    listen [::]:${LOCAL_PORT} default_server;
+    server_name ${SERVER_LAN_IP} localhost "";
+
+    absolute_redirect off;
+    port_in_redirect off;
+
+    root ${DOCROOT};
+    index index.php index.html index.htm;
+
+    charset utf-8;
+    access_log /var/log/nginx/${DOMAIN}_lan_access.log;
+    error_log /var/log/nginx/${DOMAIN}_lan_error.log warn;
+
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "0" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    set \$fcgi_https \$https;
+    if (\$http_x_forwarded_proto = "https") {
+        set \$fcgi_https "on";
+    }
+
+    include ${REWRITE_CONF};
+
+    location ~ \.php$ {
+        try_files \$uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass ${PHP_SOCK};
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_param HTTPS \$fcgi_https;
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+        fastcgi_read_timeout 300;
+        fastcgi_hide_header X-Powered-By;
+    }
+
+    location ~* \.(jpg|jpeg|gif|png|webp|svg|css|js|ico|woff|woff2|ttf|eot)$ {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, no-transform";
+    }
+
+    location ~ /\.(?!well-known) {
+        deny all;
+    }
+}
+EOF
+
+            # Auto whitelist in UFW Firewall
+            if command -v ufw >/dev/null 2>&1; then
+                echo "[INFO] Whitelisting LAN port ${LOCAL_PORT} in UFW firewall..."
+                ufw allow "${LOCAL_PORT}/tcp" comment "Almusa Site ${DOMAIN} LAN" 2>/dev/null || true
+                ufw reload 2>/dev/null || true
+            fi
+        fi
+
+        # Framework Presetting (Laravel setup)
+        if [ "$APP_TYPE" = "laravel" ]; then
+            PROJECT_DIR="${DOCROOT%/public}"
+            echo "[INFO] Configuring Laravel directories & permissions in ${PROJECT_DIR}..."
+            mkdir -p "${PROJECT_DIR}/storage/framework/"{sessions,views,cache} "${PROJECT_DIR}/storage/logs" "${PROJECT_DIR}/bootstrap/cache"
+            chown -R www-data:www-data "${PROJECT_DIR}/storage" "${PROJECT_DIR}/bootstrap/cache" 2>/dev/null || true
+            chmod -R 775 "${PROJECT_DIR}/storage" "${PROJECT_DIR}/bootstrap/cache" 2>/dev/null || true
+            if [ -f "${PROJECT_DIR}/artisan" ]; then
+                echo "[INFO] Auto-running storage:link for Laravel..."
+                su -s /bin/bash www-data -c "php ${PROJECT_DIR}/artisan storage:link" 2>/dev/null || true
+            fi
+        fi
+
         ln -sf "$CONF_FILE" "$LINK_FILE"
 
         if command -v nginx >/dev/null 2>&1; then
@@ -167,8 +254,16 @@ EOF
 
     delete)
         DELETE_FILES="${4:-0}"
+        LOCAL_PORT="${5:-0}"
         echo "[INFO] Deleting Virtual Host for $DOMAIN..."
         rm -f "$LINK_FILE" "$CONF_FILE"
+
+        # Remove UFW firewall rule if LAN port was allocated
+        if command -v ufw >/dev/null 2>&1 && [ -n "$LOCAL_PORT" ] && [ "$LOCAL_PORT" -gt 0 ]; then
+            echo "[INFO] Removing LAN port ${LOCAL_PORT} from UFW firewall..."
+            ufw delete allow "${LOCAL_PORT}/tcp" 2>/dev/null || true
+            ufw reload 2>/dev/null || true
+        fi
 
         if [ "$DELETE_FILES" = "1" ] && [ -n "$DOCROOT" ] && [ -d "$DOCROOT" ]; then
             if SAFE_DOCROOT="$(canonical_wwwroot "$DOCROOT")" && [ -d "$SAFE_DOCROOT" ]; then
